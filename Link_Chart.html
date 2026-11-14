@@ -1,0 +1,1476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Link Chart — Network Analysis Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+:root{--primary:#2C5F7C;--primary-light:#E8F1F5;--primary-mid:#A8C8D8;--text:#2A2A2A;--text-mid:#555;--text-light:#999;--bg:#F7F8FA;--white:#FFF;--rule:#E0E3E8;--danger:#C0392B;--success:#27AE60;--warning:#E67E22}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);overflow:hidden;height:100vh}
+.app{display:flex;height:100vh}
+
+/* Toolbar */
+.toolbar{width:280px;background:var(--white);border-right:1px solid var(--rule);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.toolbar-header{padding:14px 16px;border-bottom:1px solid var(--rule)}
+.toolbar-header h1{font-size:15px;font-weight:700;color:var(--primary)}
+.toolbar-header p{font-size:9px;color:var(--text-light);margin-top:2px}
+.toolbar-section{padding:10px 14px;border-bottom:1px solid var(--rule)}
+.toolbar-section h3{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-light);margin-bottom:6px}
+.toolbar-section button,.toolbar-actions button{width:100%;padding:6px 10px;border:1px solid var(--rule);background:var(--white);border-radius:4px;font-size:10px;cursor:pointer;color:var(--text-mid);margin-bottom:3px;text-align:left;transition:all .15s}
+.toolbar-section button:hover,.toolbar-actions button:hover{border-color:var(--primary);color:var(--primary)}
+.toolbar-section button.active{background:var(--primary);color:white;border-color:var(--primary)}
+.btn-row{display:flex;gap:3px}.btn-row button{flex:1;text-align:center}
+.color-options{display:flex;gap:3px;flex-wrap:wrap}
+.color-opt{width:18px;height:18px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .12s}
+.color-opt:hover{transform:scale(1.15)}.color-opt.active{border-color:var(--text)}
+
+/* Entity type icons */
+.type-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.type-btn{padding:6px 4px!important;text-align:center!important;font-size:14px!important;line-height:1}
+.type-btn .type-label{font-size:7px;display:block;margin-top:2px;color:var(--text-light)}
+.type-btn.active .type-label{color:white}
+
+/* Search */
+.search-box{width:100%;padding:5px 8px;border:1px solid var(--rule);border-radius:4px;font-size:10px;outline:none;margin-bottom:6px}
+.search-box:focus{border-color:var(--primary)}
+
+/* Node list */
+.node-list{flex:1;overflow-y:auto;padding:4px 14px;min-height:60px}
+.node-list-item{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:3px;margin-bottom:1px;cursor:pointer;font-size:10px;transition:background .12s}
+.node-list-item:hover{background:var(--bg)}
+.node-list-item.selected{background:var(--primary-light)}
+.node-list-item .icon{font-size:12px;width:16px;text-align:center}
+.node-list-item .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.node-list-item .degree{font-size:8px;color:var(--text-light);background:var(--bg);padding:0 4px;border-radius:8px}
+
+/* Toolbar actions */
+.toolbar-actions{padding:8px 14px;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:3px}
+.toolbar-actions button.export-btn{background:var(--primary);color:white;border-color:var(--primary)}
+.toolbar-actions button.danger-btn:hover{border-color:var(--danger);color:var(--danger)}
+
+/* Canvas */
+.canvas-area{flex:1;position:relative;overflow:hidden;background:#FAFBFC}
+body.dark{--primary:#6FA3BF;--primary-light:#2A3238;--primary-mid:#3E5663;--text:#E8E4D8;--text-mid:#B5AFA2;--text-light:#8A8477;--bg:#1E1C19;--white:#26231F;--rule:#3B372F}
+body.dark .canvas-area{background:#232120}
+body.dark .edge-label{fill:#9A948A}
+*:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+.canvas-area svg{width:100%;height:100%}
+.canvas-area svg.mode-add{cursor:crosshair}
+.canvas-area svg.mode-connect{cursor:pointer}
+.canvas-area svg.mode-lasso{cursor:crosshair}
+.canvas-area svg.mode-annotate{cursor:text}
+
+/* SVG elements */
+.node-group{cursor:grab}.node-group:active{cursor:grabbing}
+.node-group.selected .node-shape{stroke-width:3!important}
+.node-group.dimmed{opacity:.15}
+.node-group.path-highlight .node-shape{stroke:#FFD700!important;stroke-width:3!important}
+.node-shape{transition:opacity .2s}
+.node-label{font-family:'Inter',sans-serif;font-size:11px;fill:#333;text-anchor:middle;pointer-events:none;font-weight:500}
+.node-sublabel{font-family:'Inter',sans-serif;font-size:8px;fill:#999;text-anchor:middle;pointer-events:none}
+.node-icon{font-size:16px;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.node-badge{font-family:'Inter',sans-serif;font-size:7px;fill:white;text-anchor:middle;font-weight:700}
+
+.edge-line{fill:none}.edge-line.dimmed{opacity:.08}
+.edge-line.path-highlight{stroke:#FFD700!important;stroke-width:4!important}
+.edge-label{font-family:'Inter',sans-serif;font-size:9px;fill:#888;text-anchor:middle;pointer-events:none}
+.edge-line:hover{cursor:pointer}
+
+/* Lasso */
+.lasso-rect{fill:rgba(44,95,124,.08);stroke:var(--primary);stroke-width:1;stroke-dasharray:4,3}
+
+/* Groups */
+.group-hull{fill-opacity:.06;stroke-width:1.5;stroke-dasharray:6,3}
+
+/* Context menu */
+.ctx-menu{position:absolute;background:var(--white);border:1px solid var(--rule);border-radius:6px;padding:4px 0;box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:100;min-width:160px;font-size:11px}
+.ctx-menu-item{padding:6px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--text-mid)}
+.ctx-menu-item:hover{background:var(--primary-light);color:var(--primary)}
+.ctx-menu-item.danger:hover{background:#fde;color:var(--danger)}
+.ctx-menu-sep{border-top:1px solid var(--rule);margin:3px 0}
+
+/* Properties panel */
+.props-panel{position:absolute;top:10px;right:10px;background:var(--white);border:1px solid var(--rule);border-radius:6px;padding:12px;width:210px;box-shadow:0 2px 8px rgba(0,0,0,.06);font-size:10px;display:none;max-height:90vh;overflow-y:auto}
+.props-panel.visible{display:block}
+.props-panel h4{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:6px}
+.props-panel label{display:block;margin-bottom:4px;color:var(--text-mid);font-size:9px;font-weight:600}
+.props-panel input,.props-panel select,.props-panel textarea{width:100%;border:1px solid var(--rule);border-radius:3px;padding:3px 5px;font-size:10px;font-family:inherit;outline:none;margin-bottom:6px}
+.props-panel textarea{min-height:30px;resize:vertical}
+.props-panel input:focus,.props-panel textarea:focus{border-color:var(--primary)}
+.conf-row{display:flex;gap:4px;margin-bottom:6px}
+.conf-btn{flex:1;padding:3px;border:1px solid var(--rule);border-radius:3px;font-size:8px;cursor:pointer;text-align:center;font-weight:600;background:var(--white)}
+.conf-btn:hover{border-color:var(--primary)}.conf-btn.active{color:white}
+.conf-confirmed.active{background:var(--success);border-color:var(--success)}
+.conf-suspected.active{background:var(--warning);border-color:var(--warning)}
+.conf-unverified.active{background:var(--text-light);border-color:var(--text-light)}
+
+/* Legend */
+.legend-panel{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,.95);border:1px solid var(--rule);border-radius:6px;padding:10px 14px;font-size:9px;box-shadow:0 2px 6px rgba(0,0,0,.06);max-width:200px;display:none}
+.legend-panel.visible{display:block}
+.legend-panel h4{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:6px}
+.legend-item{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.legend-icon{font-size:12px;width:14px;text-align:center}
+
+/* Status bar */
+.status-bar{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.92);border:1px solid var(--rule);border-radius:5px;padding:5px 14px;font-size:10px;color:var(--text-mid);box-shadow:0 2px 6px rgba(0,0,0,.05);display:flex;gap:12px;align-items:center}
+.status-bar .mode-label{font-weight:600;color:var(--primary)}
+
+/* Degree filter */
+.degree-slider{width:100%;margin:4px 0}
+
+/* Timeline slider */
+.timeline-bar{position:absolute;bottom:50px;left:50%;transform:translateX(-50%);background:rgba(255,255,255,.92);border:1px solid var(--rule);border-radius:5px;padding:8px 16px;font-size:10px;display:none;align-items:center;gap:8px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+.timeline-bar.visible{display:flex}
+.timeline-bar input[type="range"]{width:200px}
+.timeline-bar .tl-label{font-size:9px;color:var(--text-light);white-space:nowrap}
+
+/* Annotations */
+.annotation{position:absolute;background:rgba(255,255,200,.9);border:1px solid #e0d88a;border-radius:4px;padding:4px 8px;font-size:10px;cursor:move;min-width:60px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.annotation textarea{border:none;background:transparent;font-size:10px;font-family:inherit;resize:both;outline:none;min-width:80px;min-height:20px}
+.annotation .ann-delete{position:absolute;top:-6px;right:-6px;width:14px;height:14px;border-radius:50%;background:var(--danger);color:white;border:none;font-size:9px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1}
+.annotation:hover .ann-delete{display:flex}
+
+/* Help panel */
+.help-panel{display:none;position:fixed;left:280px;top:0;bottom:0;width:300px;background:var(--white);border-right:1px solid var(--rule);z-index:800;overflow-y:auto;box-shadow:4px 0 16px rgba(0,0,0,.08);padding:16px}
+.help-panel.visible{display:block}
+.help-panel h2{font-size:14px;font-weight:700;color:var(--primary);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.help-panel h2 button{background:none;border:none;font-size:18px;cursor:pointer;color:var(--text-light)}
+.help-panel h2 button:hover{color:var(--danger)}
+.help-panel h3{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--primary);margin:14px 0 5px;padding-top:10px;border-top:1px solid var(--rule)}
+.help-panel h3:first-of-type{border-top:none;padding-top:0}
+.he{margin-bottom:8px}
+.he .t{font-size:10px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:5px}
+.he .t .i{font-size:13px;width:18px;text-align:center}
+.he .d{font-size:9px;color:var(--text-light);margin-top:1px;margin-left:23px;line-height:1.5}
+.hk{display:flex;justify-content:space-between;font-size:9px;padding:2px 0;border-bottom:1px solid var(--rule)}
+.hk .k{font-family:monospace;background:var(--bg);padding:1px 5px;border-radius:2px;font-size:8px;color:var(--text-mid)}
+#undoBtn:disabled,#redoBtn:disabled{opacity:.35;cursor:default}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="toolbar">
+    <div class="toolbar-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div><h1>Link Chart</h1><p>Network analysis & relationship mapping</p></div>
+      <button onclick="toggleHelp()" style="background:none;border:1px solid var(--rule);border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;color:var(--text-light);font-weight:600" title="Help & Reference">?</button>
+    </div>
+
+    <div class="toolbar-section">
+      <h3>Mode</h3>
+      <div class="btn-row"><button id="modeSelect" class="active" onclick="setMode('select')">Select</button><button id="modeAdd" onclick="setMode('add')">+ Node</button><button id="modeConnect" onclick="setMode('connect')">Connect</button></div>
+      <div class="btn-row"><button id="modeLasso" onclick="setMode('lasso')">Lasso</button><button id="modeAnnotate" onclick="setMode('annotate')">Annotate</button></div>
+    </div>
+
+    <div class="toolbar-section">
+      <h3>Entity Type</h3>
+      <div class="type-grid" id="typeGrid"></div>
+    </div>
+
+    <div class="toolbar-section">
+      <h3>Color</h3>
+      <div class="color-options" id="colorOptions"></div>
+    </div>
+
+    <div class="toolbar-section">
+      <h3>Layout</h3>
+      <div class="btn-row"><button onclick="doLayout('force')">Force</button><button onclick="doLayout('hierarchy')">Hierarchy</button></div>
+      <div class="btn-row"><button onclick="doLayout('circular')">Circular</button><button onclick="doLayout('grid')">Grid</button></div>
+      <div class="btn-row" style="margin-top:4px"><button onclick="fitToScreen()">Fit to Screen</button><button onclick="resetZoom()">Reset Zoom</button></div>
+    </div>
+
+    <div class="toolbar-section">
+      <h3>Filter</h3>
+      <label style="font-size:9px;color:var(--text-light)">Min connections: <span id="degreeVal">0</span></label>
+      <input type="range" class="degree-slider" id="degreeFilter" min="0" max="20" value="0" oninput="applyDegreeFilter(+this.value)">
+    </div>
+
+    <div class="toolbar-section">
+      <h3>Analytics</h3>
+      <label style="font-size:9px;color:var(--text-light)">Size nodes by</label>
+      <select id="sizeMetricSel" onchange="sizeByMetric(this.value)" style="width:100%;font-size:10px;margin-bottom:4px">
+        <option value="uniform">Uniform</option>
+        <option value="degree">Degree</option>
+        <option value="betweenness">Betweenness</option>
+        <option value="closeness">Closeness</option>
+      </select>
+      <button onclick="detectCommunities()" style="width:100%">Detect Communities</button>
+    </div>
+
+    <div class="toolbar-section">
+      <h3>Views</h3>
+      <select id="viewSel" onchange="gotoView(this.value)" style="width:100%;font-size:10px;margin-bottom:4px">
+        <option value="">&mdash; saved views &mdash;</option>
+      </select>
+      <div class="btn-row"><button onclick="saveView()">Save View</button><button onclick="deleteView()">Delete</button></div>
+    </div>
+
+    <div class="toolbar-section">
+      <h3>Search</h3>
+      <input class="search-box" id="searchBox" placeholder="Find node by name..." oninput="searchNodes(this.value)">
+    </div>
+
+    <div class="toolbar-section" style="padding-bottom:4px">
+      <h3>Nodes (<span id="nodeCount">0</span>) &middot; Edges (<span id="edgeCount">0</span>)</h3>
+    </div>
+    <div class="node-list" id="nodeList"></div>
+
+    <div class="toolbar-actions">
+      <button onclick="openChartsModal()" style="font-weight:700">&#128451; My Charts</button>
+      <button onclick="toggleLcDark()" title="Toggle night mode" aria-label="Toggle night mode">&#127769; Night Mode</button>
+      <button onclick="toggleLegend()">Toggle Legend</button>
+      <button onclick="toggleTimeline()">Timeline Filter</button>
+      <button id="undoBtn" onclick="lcUndoAction()" disabled title="Undo (Ctrl+Z)">&#8617; Undo</button>
+      <button id="redoBtn" onclick="lcRedoAction()" disabled title="Redo (Ctrl+Y)">&#8618; Redo</button>
+      <button onclick="clearAll()" class="danger-btn">Clear All</button>
+      <button onclick="exportJSON()">Export JSON</button>
+      <button onclick="document.getElementById('importFile').click()">Import JSON</button>
+      <button onclick="openCSVImport()">Import CSV Edges</button>
+      <button onclick="mergeDuplicateNodes(true)">Merge Duplicate Nodes</button>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+      <button class="export-btn" onclick="exportPNG()">Export as PNG</button>
+      <button class="export-btn" onclick="exportSVG()">Export as SVG</button>
+      <button onclick="exportGraphML()">Export GraphML</button>
+    </div>
+  </div>
+
+  <div class="canvas-area" id="canvasArea">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 8" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,4 L0,8 z" fill="#B0B8C0"/></marker>
+        <marker id="arr-hl" viewBox="0 0 10 8" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,4 L0,8 z" fill="#FFD700"/></marker>
+        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="10" cy="10" r=".5" fill="#ddd"/></pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#grid)"/>
+      <g id="zoomGroup">
+        <g id="groupsLayer"></g>
+        <g id="edgesGroup"></g>
+        <g id="nodesGroup"></g>
+        <rect id="lassoRect" class="lasso-rect" style="display:none"/>
+      </g>
+    </svg>
+
+    <div id="minimap" style="position:absolute;right:12px;bottom:34px;width:160px;height:110px;background:var(--white);border:1px solid var(--rule);border-radius:4px;box-shadow:0 1px 6px rgba(0,0,0,.12);cursor:pointer;overflow:hidden" onclick="minimapJump(event)" title="Minimap &mdash; click to jump"><svg id="minimapSvg" width="160" height="110"></svg></div>
+
+    <div class="status-bar">
+      <span>Mode: <span class="mode-label" id="modeLabel">Select</span></span>
+      <span id="statusText">Click a node to select or switch mode</span>
+    </div>
+
+    <div class="props-panel" id="propsPanel">
+      <h4 id="propsTitle">Node Properties</h4>
+      <label>Label</label><input id="propLabel" oninput="updateProp('label',this.value)">
+      <label>Description</label><textarea id="propDesc" oninput="updateProp('desc',this.value)"></textarea>
+      <label>Type</label><select id="propType" onchange="updateProp('entityType',this.value)"></select>
+      <label>Group</label><input id="propGroup" oninput="updateProp('group',this.value)">
+      <label>Size</label><input type="range" id="propSize" min="12" max="50" value="22" oninput="updateProp('r',+this.value)">
+      <label>Shape</label>
+      <select id="propShape" onchange="updateProp('shape',this.value)">
+        <option value="circle">Circle</option><option value="square">Square</option><option value="diamond">Diamond</option>
+      </select>
+      <label>Photo</label>
+      <div style="display:flex;gap:3px">
+        <button onclick="document.getElementById('photoFile').click()" style="flex:1;font-size:10px">Set photo&hellip;</button>
+        <button onclick="clearNodePhoto()" style="flex:1;font-size:10px">Remove</button>
+      </div>
+      <input type="file" id="photoFile" accept="image/*" style="display:none" onchange="uploadNodePhoto(event)">
+      <label>Confidence</label>
+      <div class="conf-row">
+        <button class="conf-btn conf-confirmed" onclick="updateProp('confidence','confirmed')">Confirmed</button>
+        <button class="conf-btn conf-suspected" onclick="updateProp('confidence','suspected')">Suspected</button>
+        <button class="conf-btn conf-unverified" onclick="updateProp('confidence','unverified')">Unverified</button>
+      </div>
+      <label>Date</label><input type="text" id="propDate" placeholder="YYYY-MM-DD" oninput="updateProp('date',this.value)">
+      <label>Attributes</label>
+      <div id="attrRows"></div>
+      <button onclick="addAttrRow()" style="width:100%;font-size:10px;margin-top:2px;border:1px dashed var(--rule);background:none;cursor:pointer;padding:3px">+ Add attribute</button>
+      <button onclick="deleteSelected()" style="width:100%;margin-top:4px;color:var(--danger);border-color:var(--danger)">Delete</button>
+
+      <div id="edgeProps" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--rule)">
+        <h4>Edge Properties</h4>
+        <label>Label</label><input id="edgePropLabel" oninput="updateEdgeProp('label',this.value)">
+        <label>Weight (1-10)</label><input type="range" id="edgePropWeight" min="1" max="10" value="1" oninput="updateEdgeProp('weight',+this.value)">
+        <label>Style</label>
+        <select id="edgePropStyle" onchange="updateEdgeProp('style',this.value)">
+          <option value="solid">Solid (confirmed)</option>
+          <option value="dashed">Dashed (suspected)</option>
+          <option value="dotted">Dotted (unverified)</option>
+        </select>
+        <label>Direction</label>
+        <select id="edgePropDir" onchange="updateEdgeProp('dir',this.value)">
+          <option value="forward">&#8594; Forward</option>
+          <option value="reverse">&#8592; Reverse</option>
+          <option value="both">&#8596; Both</option>
+          <option value="none">&#8212; None</option>
+        </select>
+        <label>Date</label><input type="text" id="edgePropDate" placeholder="YYYY-MM-DD" oninput="updateEdgeProp('date',this.value)">
+        <button onclick="deleteSelectedEdge()" style="width:100%;margin-top:4px;color:var(--danger);border-color:var(--danger)">Delete Edge</button>
+      </div>
+    </div>
+
+    <div class="legend-panel" id="legendPanel"></div>
+
+    <div class="timeline-bar" id="timelineBar">
+      <span class="tl-label">From:</span>
+      <input type="text" id="tlFrom" placeholder="YYYY-MM-DD" style="width:90px;font-size:10px;padding:2px 4px;border:1px solid var(--rule);border-radius:3px" oninput="applyTimelineFilter()">
+      <span class="tl-label">To:</span>
+      <input type="text" id="tlTo" placeholder="YYYY-MM-DD" style="width:90px;font-size:10px;padding:2px 4px;border:1px solid var(--rule);border-radius:3px" oninput="applyTimelineFilter()">
+      <button onclick="clearTimelineFilter()" style="font-size:9px;padding:2px 8px;border:1px solid var(--rule);border-radius:3px;background:var(--white);cursor:pointer">Clear</button>
+      <button id="tlPlayBtn" onclick="playTimeline()" style="font-size:9px;padding:2px 8px;border:1px solid var(--primary);border-radius:3px;background:var(--primary);color:white;cursor:pointer">&#9654; Play</button>
+    </div>
+
+    <div id="ctxMenu" class="ctx-menu" style="display:none"></div>
+    <div id="annotationsLayer"></div>
+  </div>
+</div>
+
+<!-- Help Panel -->
+<div class="help-panel" id="helpPanel">
+  <h2>Help & Reference <button onclick="toggleHelp()">&times;</button></h2>
+
+  <h3>Getting Started</h3>
+  <div class="he"><div class="t"><span class="i">1.</span> Add nodes</div><div class="d">Press <strong>A</strong> or click <strong>+ Node</strong>, then click anywhere on the canvas. Choose an entity type and color first.</div></div>
+  <div class="he"><div class="t"><span class="i">2.</span> Connect nodes</div><div class="d">Press <strong>C</strong> or click <strong>Connect</strong>, then click a source node followed by a target node. An arrow is drawn.</div></div>
+  <div class="he"><div class="t"><span class="i">3.</span> Explore & analyze</div><div class="d">Right-click any node for analysis options: highlight neighbors, find shortest path, or show centrality.</div></div>
+
+  <h3>Modes</h3>
+  <div class="he"><div class="t"><span class="i">🖱</span> Select (S)</div><div class="d">Click to select nodes. Drag to move. Shift+click for multi-select. Right-click for context menu.</div></div>
+  <div class="he"><div class="t"><span class="i">➕</span> Add Node (A)</div><div class="d">Click canvas to place a new node. It inherits the currently selected entity type and color.</div></div>
+  <div class="he"><div class="t"><span class="i">🔗</span> Connect (C)</div><div class="d">Click source node, then target node. Creates a directional edge with an arrow.</div></div>
+  <div class="he"><div class="t"><span class="i">▬</span> Lasso (L)</div><div class="d">Drag a rectangle to select multiple nodes at once. Use with "Create group" in the context menu.</div></div>
+  <div class="he"><div class="t"><span class="i">📝</span> Annotate (T)</div><div class="d">Click canvas to place a draggable text annotation. Type notes directly. Drag the box to reposition.</div></div>
+
+  <h3>Entity Types (12)</h3>
+  <div class="he"><div class="d" style="margin-left:0">👤 Person &middot; 🏢 Org &middot; 📍 Location &middot; 📱 Phone &middot; 📧 Email &middot; 🏦 Account &middot; 📄 Document &middot; 📅 Event &middot; 🚗 Vehicle &middot; 💻 Device &middot; 🌐 Website &middot; ⬤ Generic</div></div>
+
+  <h3>Node Properties</h3>
+  <div class="he"><div class="t"><span class="i">🏷</span> Label & Description</div><div class="d">Click a node to edit its name, description, group, size, type, date, and confidence level.</div></div>
+  <div class="he"><div class="t"><span class="i">🔒</span> Confidence</div><div class="d"><strong>Confirmed</strong> = solid border. <strong>Suspected</strong> = dashed orange border. <strong>Unverified</strong> = dotted gray border.</div></div>
+  <div class="he"><div class="t"><span class="i">#</span> Degree badge</div><div class="d">Each node shows its connection count as a small number badge.</div></div>
+
+  <h3>Edge Properties</h3>
+  <div class="he"><div class="t"><span class="i">✏️</span> Label & Weight</div><div class="d">Click an edge to edit its label, weight (controls thickness), line style, and date.</div></div>
+  <div class="he"><div class="t"><span class="i">—</span> Line styles</div><div class="d"><strong>Solid</strong> = confirmed. <strong>Dashed</strong> = suspected. <strong>Dotted</strong> = unverified. Right-click an edge to delete.</div></div>
+
+  <h3>Analysis (Right-Click Menu)</h3>
+  <div class="he"><div class="t"><span class="i">🔍</span> Highlight neighbors</div><div class="d">Dims all unconnected nodes to focus on the selected node's direct connections. Clears after 4 seconds.</div></div>
+  <div class="he"><div class="t"><span class="i">📏</span> Shortest path</div><div class="d">After clicking, select a target node. The shortest path highlights in gold with step count. Clears after 5 seconds.</div></div>
+  <div class="he"><div class="t"><span class="i">📊</span> Centrality</div><div class="d">Auto-sizes all nodes by degree centrality. Larger nodes = more connections = more important.</div></div>
+  <div class="he"><div class="t"><span class="i">📌</span> Create group</div><div class="d">Select multiple nodes (Lasso or Shift+click), then right-click > Create group. Draws a colored boundary with a label.</div></div>
+
+  <h3>Navigation</h3>
+  <div class="he"><div class="t"><span class="i">🔎</span> Zoom</div><div class="d">Scroll to pan the canvas; pinch or Ctrl+scroll to zoom. Drag empty canvas (or hold Space) to grab and pull the view.</div></div>
+  <div class="he"><div class="t"><span class="i">&#8617;</span> Undo / Redo</div><div class="d">Ctrl/Cmd+Z to undo, Ctrl+Y or Ctrl+Shift+Z to redo (60 levels). Covers adds, deletes, moves, property edits, layouts, imports, and Clear All.</div></div>
+  <div class="he"><div class="t"><span class="i">&#9736;</span> Selection ops</div><div class="d">Ctrl+D duplicate, Ctrl+C/V copy &amp; paste. Right-click a multi-selection for align, distribute, and bulk color/type.</div></div>
+  <div class="he"><div class="t"><span class="i">&#128209;</span> Attributes</div><div class="d">Add key/value fields to any node in the properties panel. Search matches attributes and descriptions too.</div></div>
+  <div class="he"><div class="t"><span class="i">&#128202;</span> Analytics</div><div class="d">Size nodes by degree, betweenness, or closeness centrality. Detect Communities recolors nodes by cluster (Ctrl+Z to revert).</div></div>
+  <div class="he"><div class="t"><span class="i">&#9654;</span> Timeline playback</div><div class="d">Press Play in the Timeline bar to animate the network chronologically. Dated nodes and edges appear as time advances.</div></div>
+  <div class="he"><div class="t"><span class="i">&#128100;</span> Photos &amp; shapes</div><div class="d">Give nodes a photo or a square/diamond shape from the properties panel. Both carry into the journal, print, and exports.</div></div>
+  <div class="he"><div class="t"><span class="i">&#128205;</span> Views &amp; minimap</div><div class="d">Save named camera+filter views for briefings. The minimap (bottom right) shows the whole chart; click it to jump.</div></div>
+  <div class="he"><div class="t"><span class="i">&#128451;</span> My Charts</div><div class="d">Browse, rename, open, and delete all saved chart workspaces. Merge Duplicate Nodes unifies entities that share a name.</div></div>
+  <div class="he"><div class="t"><span class="i">&#128230;</span> Exports</div><div class="d">PNG (raster), SVG (vector, print quality), GraphML (opens in Gephi/yEd), and JSON (re-import into the journal).</div></div>
+  <div class="he"><div class="t"><span class="i">✋</span> Pan</div><div class="d">Ctrl+drag (or Cmd+drag on Mac) to pan the canvas. Middle mouse button also pans.</div></div>
+  <div class="he"><div class="t"><span class="i">⊞</span> Fit to Screen</div><div class="d">Auto-zooms to show all nodes with padding. Found in the Layout section.</div></div>
+  <div class="he"><div class="t"><span class="i">↺</span> Reset Zoom</div><div class="d">Returns to the default 1:1 zoom level.</div></div>
+
+  <h3>Layouts</h3>
+  <div class="he"><div class="d" style="margin-left:0"><strong>Force</strong> &mdash; Physics simulation, connected nodes pull together.<br><strong>Hierarchy</strong> &mdash; Top-down by importance (most connected at top).<br><strong>Circular</strong> &mdash; All nodes arranged in a circle.<br><strong>Grid</strong> &mdash; Evenly spaced grid arrangement.</div></div>
+
+  <h3>Filtering</h3>
+  <div class="he"><div class="t"><span class="i">🔢</span> Degree filter</div><div class="d">Slider hides nodes with fewer than N connections. Reveals the backbone of the network.</div></div>
+  <div class="he"><div class="t"><span class="i">📅</span> Timeline filter</div><div class="d">Set From/To dates to show only edges within a date range. Edges without dates always show.</div></div>
+  <div class="he"><div class="t"><span class="i">🔍</span> Search</div><div class="d">Type a node name to find and select it instantly.</div></div>
+
+  <h3>Import / Export</h3>
+  <div class="he"><div class="t"><span class="i">📊</span> CSV Import</div><div class="d">Paste edge data: <code>From,To,Label,Weight,Style,Date</code> (one per line). Only From and To are required. Auto-creates nodes.</div></div>
+  <div class="he"><div class="t"><span class="i">{ }</span> JSON</div><div class="d">Export/import full chart state including nodes, edges, groups, and annotations.</div></div>
+  <div class="he"><div class="t"><span class="i">🖼</span> PNG</div><div class="d">Export a high-resolution screenshot. Use this to paste into the Research Journal via an Image block.</div></div>
+
+  <h3>Keyboard Shortcuts</h3>
+  <div class="hk"><span>Add node mode</span><span class="k">A</span></div>
+  <div class="hk"><span>Select mode</span><span class="k">S</span></div>
+  <div class="hk"><span>Connect mode</span><span class="k">C</span></div>
+  <div class="hk"><span>Lasso mode</span><span class="k">L</span></div>
+  <div class="hk"><span>Annotate mode</span><span class="k">T</span></div>
+  <div class="hk"><span>Delete selected</span><span class="k">Delete</span></div>
+  <div class="hk"><span>Deselect / cancel</span><span class="k">Esc</span></div>
+  <div class="hk"><span>Zoom</span><span class="k">Scroll</span></div>
+  <div class="hk"><span>Pan</span><span class="k">Ctrl+Drag</span></div>
+
+  <h3>Tips</h3>
+  <div class="he"><div class="d" style="margin-left:0">&bull; All data auto-saves to localStorage.<br>&bull; Export JSON regularly as a backup.<br>&bull; Use the Legend panel to see what colors and icons mean.<br>&bull; After CSV import, click Force layout to auto-arrange.<br>&bull; Centrality analysis resizes nodes &mdash; use Reset Zoom + Fit to Screen after.<br>&bull; To use in the Research Journal, export as PNG and add via Image block.</div></div>
+</div>
+
+<!-- CSV Import Modal -->
+<div id="csvModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:900;align-items:center;justify-content:center">
+  <div style="background:var(--white);border-radius:8px;padding:20px;max-width:450px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.15)">
+    <h3 style="font-size:14px;color:var(--primary);margin-bottom:8px">Import CSV Edges</h3>
+    <p style="font-size:10px;color:var(--text-light);margin-bottom:8px">Format: From,To,Label,Weight,Style,Date (one edge per line). Only From and To are required.</p>
+    <textarea id="csvEdgeInput" style="width:100%;min-height:100px;font-family:monospace;font-size:10px;border:1px solid var(--rule);border-radius:4px;padding:6px;outline:none" placeholder="Alice,Bob,colleague,3,solid,2025-06-01&#10;Bob,Charlie,reports to,5,solid&#10;Alice,Dave,suspected,2,dashed"></textarea>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px">
+      <button onclick="closeCSVModal()" style="padding:5px 14px;border:1px solid var(--rule);border-radius:4px;font-size:11px;cursor:pointer;background:var(--white)">Cancel</button>
+      <button onclick="doCSVImport()" style="padding:5px 14px;border:1px solid var(--primary);border-radius:4px;font-size:11px;cursor:pointer;background:var(--primary);color:white">Import</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Per-workspace storage: opening with ?ws=<id> gives each report/block its own isolated chart.
+const LC_WS=new URLSearchParams(location.search).get('ws');
+const LC_KEY=LC_WS?'linkchart2_ws_'+LC_WS:'linkchart2';
+let LC_DARK=localStorage.getItem('lc_dark')==='1';
+if(LC_DARK)document.addEventListener('DOMContentLoaded',()=>document.body.classList.add('dark'));
+function toggleLcDark(){LC_DARK=!LC_DARK;localStorage.setItem('lc_dark',LC_DARK?'1':'0');document.body.classList.toggle('dark',LC_DARK);render()}
+
+// ── UNDO / REDO ──
+let lcUndo=[],lcRedo=[];const LC_MAX_UNDO=60;let lcPropSnapTime=0;let dragSnapDone=true;
+function lcSnapshot(){return JSON.stringify({nodes,edges,groups,annotations,nextId})}
+function lcPushUndo(){lcUndo.push(lcSnapshot());if(lcUndo.length>LC_MAX_UNDO)lcUndo.shift();lcRedo=[];lcUpdateUndoBtns()}
+function lcPushUndoThrottled(){const now=Date.now();if(now-lcPropSnapTime>1500){lcPushUndo();lcPropSnapTime=now}}
+function lcRestore(s){const d=JSON.parse(s);nodes=d.nodes||[];edges=d.edges||[];groups=d.groups||[];annotations=d.annotations||[];nextId=d.nextId||1;
+selectedNodeId=null;selectedEdgeId=null;multiSelected.clear();connectFrom=null;hideProps();hideCtxMenu();render();renderAnnotations();save();lcUpdateUndoBtns()}
+function lcUndoAction(){if(!lcUndo.length)return;lcRedo.push(lcSnapshot());lcRestore(lcUndo.pop())}
+function lcRedoAction(){if(!lcRedo.length)return;lcUndo.push(lcSnapshot());lcRestore(lcRedo.pop())}
+function lcUpdateUndoBtns(){const u=document.getElementById('undoBtn'),r=document.getElementById('redoBtn');if(u)u.disabled=!lcUndo.length;if(r)r.disabled=!lcRedo.length}
+
+// ═══════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════
+const COLORS=['#2C5F7C','#5A8A6A','#8B6E4E','#7B68AE','#C0794A','#4A90A4','#D4555E','#2E7D32','#5C6BC0','#F57C00','#00897B','#8D6E63'];
+const ENTITY_TYPES=[
+  {id:'person',icon:'👤',label:'Person'},
+  {id:'org',icon:'🏢',label:'Org'},
+  {id:'location',icon:'📍',label:'Location'},
+  {id:'phone',icon:'📱',label:'Phone'},
+  {id:'email',icon:'📧',label:'Email'},
+  {id:'account',icon:'🏦',label:'Account'},
+  {id:'document',icon:'📄',label:'Doc'},
+  {id:'event',icon:'📅',label:'Event'},
+  {id:'vehicle',icon:'🚗',label:'Vehicle'},
+  {id:'device',icon:'💻',label:'Device'},
+  {id:'website',icon:'🌐',label:'Web'},
+  {id:'generic',icon:'⬤',label:'Generic'},
+];
+
+// ═══════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════
+let nodes=[],edges=[],groups=[],annotations=[],views=[];let chartName='';
+let currentTransform=d3.zoomIdentity; // declared early: the minimap reads it during the initial render
+let mode='select',selectedNodeId=null,selectedEdgeId=null,connectFrom=null;
+let currentColor=COLORS[0],currentType='person';
+let dragNode=null,dragOff={x:0,y:0};
+let lassoStart=null,lassoActive=false;
+let multiSelected=new Set();
+let degreeMin=0,tlFrom='',tlTo='';
+let nextId=1;
+
+const svg=document.getElementById('svg');
+const nodesG=document.getElementById('nodesGroup');
+const edgesG=document.getElementById('edgesGroup');
+const groupsG=document.getElementById('groupsLayer');
+
+// ═══════════════════════════════════════
+// INIT UI
+// ═══════════════════════════════════════
+document.getElementById('colorOptions').innerHTML=COLORS.map((c,i)=>
+  `<div class="color-opt ${i===0?'active':''}" style="background:${c}" onclick="pickColor('${c}',this)"></div>`).join('');
+
+document.getElementById('typeGrid').innerHTML=ENTITY_TYPES.map(t=>
+  `<button class="type-btn ${t.id==='person'?'active':''}" onclick="pickType('${t.id}',this)" data-type="${t.id}">${t.icon}<span class="type-label">${t.label}</span></button>`).join('');
+
+document.getElementById('propType').innerHTML=ENTITY_TYPES.map(t=>`<option value="${t.id}">${t.icon} ${t.label}</option>`).join('');
+
+// ═══════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════
+function esc(s){return s?String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):''}
+function toggleHelp(){document.getElementById('helpPanel').classList.toggle('visible')}
+function uid(){return nextId++}
+function getIcon(typeId){return ENTITY_TYPES.find(t=>t.id===typeId)?.icon||'⬤'}
+function getDegree(nid){return edges.filter(e=>e.from===nid||e.to===nid).length}
+function pickColor(c,el){currentColor=c;document.querySelectorAll('.color-opt').forEach(e=>e.classList.remove('active'));el?.classList.add('active');if(selectedNodeId){findNode(selectedNodeId).color=c;render()}}
+function pickType(t,el){currentType=t;document.querySelectorAll('.type-btn').forEach(e=>e.classList.remove('active'));el?.classList.add('active')}
+function findNode(id){return nodes.find(n=>String(n.id)===String(id))}
+function selectNodeFromList(id){const n=findNode(id);if(!n)return;selectedNodeId=n.id;selectedEdgeId=null;multiSelected.clear();multiSelected.add(n.id);render();showNodeProps(n)}
+function findEdge(id){return edges.find(e=>String(e.id)===String(id))}
+
+function setMode(m){
+  mode=m;connectFrom=null;hideCtxMenu();
+  ['select','add','connect','lasso','annotate'].forEach(x=>{
+    const el=document.getElementById('mode'+x.charAt(0).toUpperCase()+x.slice(1));
+    if(el)el.classList.toggle('active',x===m)});
+  document.getElementById('modeLabel').textContent={select:'Select',add:'Add Node',connect:'Connect',lasso:'Lasso',annotate:'Annotate'}[m]||m;
+  svg.className.baseVal='mode-'+m;
+  const msgs={select:'Click node to select, drag to move. Right-click for options.',add:'Click canvas to place a node',connect:'Click source node, then target node',lasso:'Drag to select multiple nodes',annotate:'Click canvas to place a text annotation'};
+  document.getElementById('statusText').textContent=msgs[m]||'';
+}
+
+// ═══════════════════════════════════════
+// CANVAS EVENTS
+// ═══════════════════════════════════════
+// Original click handler removed — zoom-aware handler below handles add/annotate/select
+
+svg.addEventListener('contextmenu',function(e){e.preventDefault()});
+
+// Lasso
+// Original mouse handlers removed — zoom-aware handlers below handle lasso/drag correctly
+
+// ═══════════════════════════════════════
+// NODE EVENTS
+// ═══════════════════════════════════════
+function onNodeClick(id,e){
+  e.stopPropagation();hideCtxMenu();
+  const _cn=findNode(id);if(!_cn)return;id=_cn.id;
+  if(mode==='connect'){
+    if(!connectFrom){connectFrom=id;document.getElementById('statusText').textContent='Click target node';render()}
+    else if(connectFrom!==id){
+      lcPushUndo();
+      edges.push({id:uid(),from:connectFrom,to:id,label:'',weight:1,style:'solid',date:'',dir:'forward'});
+      connectFrom=null;render();
+    }
+  }else{
+    if(e.shiftKey){multiSelected.has(id)?multiSelected.delete(id):multiSelected.add(id);render()}
+    else{selectedNodeId=id;selectedEdgeId=null;multiSelected.clear();multiSelected.add(id);render();showNodeProps(findNode(id))}
+  }
+}
+
+function onNodeRightClick(id,e){
+  e.preventDefault();e.stopPropagation();
+  const _cn=findNode(id);if(!_cn)return;id=_cn.id;
+  selectedNodeId=id;render();showNodeProps(findNode(id));
+  showCtxMenu(e.clientX,e.clientY,[
+    {icon:'🔍',label:'Highlight neighbors',action:()=>highlightNeighbors(id)},
+    {icon:'📏',label:'Find shortest path...',action:()=>startPathFind(id)},
+    {icon:'📊',label:'Show centrality',action:()=>showCentrality()},
+    {sep:true},
+    {icon:'📌',label:'Create group from selected',action:()=>createGroupFromSelected()},
+    {icon:'👁',label:'Expand neighbors',action:()=>expandNeighbors(id)},
+    {sep:true},
+    {icon:'⧉',label:'Duplicate (Ctrl+D)',action:()=>duplicateSelection()},
+    ...(multiSelected.size>1?[
+      {icon:'🎨',label:'Set color to palette color',action:()=>bulkSetColor()},
+      {icon:'🏷',label:'Set type to palette type',action:()=>bulkSetType()},
+      {icon:'⇔',label:'Align horizontally',action:()=>alignSelection('h')},
+      {icon:'⇕',label:'Align vertically',action:()=>alignSelection('v')},
+      {icon:'⇹',label:'Distribute horizontally',action:()=>distributeSelection('h')},
+      {icon:'⇳',label:'Distribute vertically',action:()=>distributeSelection('v')},
+    ]:[]),
+    {sep:true},
+    {icon:'🗑',label:'Delete',action:()=>deleteSelected(),danger:true},
+  ]);
+}
+
+// ═══════════════════════════════════════
+// EDGE EVENTS
+// ═══════════════════════════════════════
+function onEdgeClick(id,e){
+  e.stopPropagation();hideCtxMenu();
+  const _ce=findEdge(id);if(!_ce)return;id=_ce.id;
+  selectedEdgeId=id;selectedNodeId=null;render();showEdgeProps(_ce);
+}
+
+function onEdgeRightClick(id,e){
+  e.preventDefault();e.stopPropagation();
+  const _ce=findEdge(id);if(!_ce)return;id=_ce.id;
+  selectedEdgeId=id;render();
+  showCtxMenu(e.clientX,e.clientY,[
+    {icon:'✏️',label:'Edit label',action:()=>showEdgeProps(findEdge(id))},
+    {icon:'🗑',label:'Delete edge',action:()=>deleteSelectedEdge(),danger:true},
+  ]);
+}
+
+// ═══════════════════════════════════════
+// CONTEXT MENU
+// ═══════════════════════════════════════
+function showCtxMenu(x,y,items){
+  const menu=document.getElementById('ctxMenu');
+  window._ctxActions=items;
+  menu.innerHTML=items.map((item,i)=>{
+    if(item.sep)return'<div class="ctx-menu-sep"></div>';
+    return`<div class="ctx-menu-item ${item.danger?'danger':''}" onclick="hideCtxMenu();window._ctxActions[${i}].action()">${item.icon} ${item.label}</div>`;
+  }).join('');
+  menu.style.left=x+'px';menu.style.top=y+'px';menu.style.display='block';
+}
+function hideCtxMenu(){document.getElementById('ctxMenu').style.display='none'}
+document.addEventListener('click',()=>hideCtxMenu());
+
+// ═══════════════════════════════════════
+// PROPERTIES PANEL
+// ═══════════════════════════════════════
+function showNodeProps(n){
+  if(!n)return;
+  const p=document.getElementById('propsPanel');p.classList.add('visible');
+  document.getElementById('propsTitle').textContent='Node Properties';
+  document.getElementById('propLabel').value=n.label||'';
+  document.getElementById('propDesc').value=n.desc||'';
+  document.getElementById('propType').value=n.entityType||'generic';
+  document.getElementById('propGroup').value=n.group||'';
+  document.getElementById('propSize').value=n.r||22;
+  document.getElementById('propShape').value=n.shape||'circle';
+  document.getElementById('propDate').value=n.date||'';
+  document.querySelectorAll('.conf-btn').forEach(b=>b.classList.remove('active'));
+  const cb=document.querySelector('.conf-'+(n.confidence||'confirmed'));if(cb)cb.classList.add('active');
+  renderAttrRows(n);
+  document.getElementById('edgeProps').style.display='none';
+}
+
+// ── NODE ATTRIBUTES (key/value) ──
+function renderAttrRows(n){const c=document.getElementById('attrRows');if(!c)return;
+const attrs=n.attrs||{};
+c.innerHTML=Object.keys(attrs).map(k=>`<div style="display:flex;gap:3px;margin-bottom:3px">
+<input value="${esc(k)}" placeholder="key" style="flex:1;font-size:10px;min-width:0" onchange="renameAttr('${esc(k)}',this.value)">
+<input value="${esc(attrs[k])}" placeholder="value" style="flex:1.4;font-size:10px;min-width:0" oninput="setAttrVal('${esc(k)}',this.value)">
+<button style="border:none;background:none;cursor:pointer;color:var(--danger);font-size:12px;padding:0 2px" onclick="removeAttr('${esc(k)}')">&times;</button></div>`).join('')}
+function addAttrRow(){if(!selectedNodeId)return;const n=findNode(selectedNodeId);if(!n)return;lcPushUndo();n.attrs=n.attrs||{};let k='field',i=1;while(k in n.attrs)k='field'+(++i);n.attrs[k]='';renderAttrRows(n);save()}
+function setAttrVal(k,v){const n=findNode(selectedNodeId);if(!n||!n.attrs)return;lcPushUndoThrottled();n.attrs[k]=v;save()}
+function renameAttr(oldK,newK){const n=findNode(selectedNodeId);if(!n||!n.attrs||!newK||oldK===newK)return;lcPushUndo();n.attrs[newK]=n.attrs[oldK];delete n.attrs[oldK];renderAttrRows(n);save()}
+function removeAttr(k){const n=findNode(selectedNodeId);if(!n||!n.attrs)return;lcPushUndo();delete n.attrs[k];renderAttrRows(n);save()}
+
+function showEdgeProps(edge){
+  if(!edge)return;
+  const p=document.getElementById('propsPanel');p.classList.add('visible');
+  document.getElementById('propsTitle').textContent='Edge Properties';
+  document.getElementById('edgeProps').style.display='block';
+  document.getElementById('edgePropLabel').value=edge.label||'';
+  document.getElementById('edgePropWeight').value=edge.weight||1;
+  document.getElementById('edgePropStyle').value=edge.style||'solid';
+  document.getElementById('edgePropDir').value=edge.dir||'forward';
+  document.getElementById('edgePropDate').value=edge.date||'';
+}
+
+function hideProps(){document.getElementById('propsPanel').classList.remove('visible')}
+function uploadNodePhoto(e){const f=e.target.files[0];if(!f)return;const rd=new FileReader();
+rd.onload=x=>{const n=findNode(selectedNodeId);if(!n)return;lcPushUndo();n.photo=x.target.result;render();save()};
+rd.readAsDataURL(f);e.target.value=''}
+function clearNodePhoto(){const n=findNode(selectedNodeId);if(!n||!n.photo)return;lcPushUndo();delete n.photo;render();save()}
+function updateProp(k,v){if(!selectedNodeId)return;const n=findNode(selectedNodeId);if(n){lcPushUndoThrottled();n[k]=v;render()}}
+function updateEdgeProp(k,v){if(!selectedEdgeId)return;const e=findEdge(selectedEdgeId);if(e){lcPushUndoThrottled();e[k]=v;render()}}
+
+// ═══════════════════════════════════════
+// DELETE
+// ═══════════════════════════════════════
+function deleteSelected(){
+  const toDelete=multiSelected.size>0?[...multiSelected]:selectedNodeId?[selectedNodeId]:[];
+  if(!toDelete.length)return;
+  lcPushUndo();
+  nodes=nodes.filter(n=>!toDelete.includes(n.id));
+  edges=edges.filter(e=>!toDelete.includes(e.from)&&!toDelete.includes(e.to));
+  selectedNodeId=null;multiSelected.clear();hideProps();render();
+}
+function deleteSelectedEdge(){
+  if(!selectedEdgeId)return;
+  lcPushUndo();
+  edges=edges.filter(e=>e.id!==selectedEdgeId);selectedEdgeId=null;hideProps();render();
+}
+
+// ── SELECTION OPERATIONS ──
+let lcClipboard=null;
+function statusMsg(t){document.getElementById('statusText').textContent=t}
+function selIds(){return multiSelected.size?[...multiSelected]:(selectedNodeId!=null?[selectedNodeId]:[])}
+function duplicateSelection(){
+  const ids=selIds();if(!ids.length){statusMsg('Select node(s) first');return}
+  lcPushUndo();
+  const map={},newIds=[];
+  ids.forEach(id=>{const n=findNode(id);if(!n)return;const c=JSON.parse(JSON.stringify(n));c.id=uid();c.x+=40;c.y+=40;map[id]=c.id;nodes.push(c);newIds.push(c.id)});
+  edges.forEach(e=>{if(map[e.from]!==undefined&&map[e.to]!==undefined){const c=JSON.parse(JSON.stringify(e));c.id=uid();c.from=map[e.from];c.to=map[e.to];edges.push(c)}});
+  multiSelected.clear();newIds.forEach(i=>multiSelected.add(i));selectedNodeId=null;render();save();
+  statusMsg(newIds.length+' node(s) duplicated');
+}
+function copySelection(){const ids=selIds();if(!ids.length)return;
+  const ns=ids.map(id=>findNode(id)).filter(Boolean);
+  const idSet=new Set(ns.map(n=>n.id));
+  const es2=edges.filter(e=>idSet.has(e.from)&&idSet.has(e.to));
+  lcClipboard=JSON.parse(JSON.stringify({nodes:ns,edges:es2}));
+  statusMsg(ns.length+' node(s) copied — Ctrl+V to paste');}
+function pasteClipboard(){if(!lcClipboard||!lcClipboard.nodes.length)return;
+  lcPushUndo();const map={},newIds=[];
+  lcClipboard.nodes.forEach(n=>{const c=JSON.parse(JSON.stringify(n));c.id=uid();c.x+=60;c.y+=60;map[n.id]=c.id;nodes.push(c);newIds.push(c.id)});
+  lcClipboard.edges.forEach(e=>{const c=JSON.parse(JSON.stringify(e));c.id=uid();c.from=map[e.from];c.to=map[e.to];edges.push(c)});
+  multiSelected.clear();newIds.forEach(i=>multiSelected.add(i));selectedNodeId=null;render();save();statusMsg('Pasted '+newIds.length+' node(s)');}
+function alignSelection(axis){const ids=selIds();if(ids.length<2){statusMsg('Select 2+ nodes');return}
+  lcPushUndo();const ns=ids.map(findNode).filter(Boolean);
+  const avg=ns.reduce((s,n)=>s+(axis==='h'?n.y:n.x),0)/ns.length;
+  ns.forEach(n=>{if(axis==='h')n.y=avg;else n.x=avg});render();save()}
+function distributeSelection(axis){const ids=selIds();if(ids.length<3){statusMsg('Select 3+ nodes');return}
+  lcPushUndo();const ns=ids.map(findNode).filter(Boolean).sort((a,b)=>(axis==='h'?a.x-b.x:a.y-b.y));
+  const min=axis==='h'?ns[0].x:ns[0].y,max=axis==='h'?ns[ns.length-1].x:ns[ns.length-1].y;
+  ns.forEach((n,i)=>{const v=min+(max-min)*i/(ns.length-1);if(axis==='h')n.x=v;else n.y=v});render();save()}
+function bulkSetColor(){const ids=selIds();if(!ids.length)return;lcPushUndo();ids.forEach(id=>{const n=findNode(id);if(n)n.color=currentColor});render();save()}
+function bulkSetType(){const ids=selIds();if(!ids.length)return;lcPushUndo();ids.forEach(id=>{const n=findNode(id);if(n)n.entityType=currentType});render();save()}
+
+// ═══════════════════════════════════════
+// ANALYSIS
+// ═══════════════════════════════════════
+let pathFindFrom=null;
+function startPathFind(fromId){
+  pathFindFrom=fromId;
+  document.getElementById('statusText').textContent='Click a target node to find shortest path...';
+  mode='select';
+  const origClick=onNodeClick;
+  window._pathClickHandler=(id,e)=>{
+    e.stopPropagation();
+    const _cn=findNode(id);if(!_cn)return;id=_cn.id;
+    const path=bfs(pathFindFrom,id);
+    if(path){highlightPath(path);document.getElementById('statusText').textContent=`Path: ${path.length-1} steps`}
+    else{document.getElementById('statusText').textContent='No path found'}
+    pathFindFrom=null;
+  };
+}
+
+function bfs(startId,endId){
+  const visited=new Set();const queue=[[startId]];visited.add(startId);
+  while(queue.length){
+    const path=queue.shift();const curr=path[path.length-1];
+    if(curr===endId)return path;
+    edges.forEach(e=>{
+      const neighbor=e.from===curr?e.to:e.to===curr?e.from:null;
+      if(neighbor&&!visited.has(neighbor)){visited.add(neighbor);queue.push([...path,neighbor])}
+    });
+  }
+  return null;
+}
+
+function highlightPath(path){
+  const pathSet=new Set(path);
+  const pathEdges=new Set();
+  for(let i=0;i<path.length-1;i++){
+    edges.forEach(e=>{if((e.from===path[i]&&e.to===path[i+1])||(e.from===path[i+1]&&e.to===path[i]))pathEdges.add(e.id)});
+  }
+  render(pathSet,pathEdges);
+  setTimeout(()=>render(),5000);
+}
+
+function highlightNeighbors(id){
+  const neighborIds=new Set([id]);
+  edges.forEach(e=>{if(e.from===id)neighborIds.add(e.to);if(e.to===id)neighborIds.add(e.from)});
+  render(neighborIds);
+  setTimeout(()=>render(),4000);
+}
+
+function showCentrality(){
+  // Degree centrality — map to node size
+  const maxDeg=Math.max(1,...nodes.map(n=>getDegree(n.id)));
+  nodes.forEach(n=>{n.r=12+Math.round((getDegree(n.id)/maxDeg)*30)});
+  render();
+  document.getElementById('statusText').textContent='Node sizes mapped to degree centrality. Larger = more connections.';
+}
+
+function expandNeighbors(id){highlightNeighbors(id)}
+
+// ── ANALYTICS: centrality measures & communities ──
+function lcAdjacency(){const adj={};nodes.forEach(n=>adj[n.id]=[]);
+edges.forEach(e=>{if(adj[e.from]&&adj[e.to]){adj[e.from].push(e.to);adj[e.to].push(e.from)}});return adj}
+function computeCloseness(){const adj=lcAdjacency(),res={};
+nodes.forEach(s=>{const dist={};dist[s.id]=0;const q=[s.id];let total=0,reach=0;
+while(q.length){const c=q.shift();(adj[c]||[]).forEach(nb=>{if(!(nb in dist)){dist[nb]=dist[c]+1;total+=dist[nb];reach++;q.push(nb)}})}
+res[s.id]=reach>0?reach/total:0});return res}
+function computeBetweenness(){const adj=lcAdjacency(),bc={};nodes.forEach(n=>bc[n.id]=0);
+nodes.forEach(s=>{const S=[],P={},sigma={},d={};
+nodes.forEach(n=>{P[n.id]=[];sigma[n.id]=0;d[n.id]=-1});
+sigma[s.id]=1;d[s.id]=0;const Q=[s.id];
+while(Q.length){const v=Q.shift();S.push(v);(adj[v]||[]).forEach(w=>{
+if(d[w]<0){Q.push(w);d[w]=d[v]+1}
+if(d[w]===d[v]+1){sigma[w]+=sigma[v];P[w].push(v)}})}
+const delta={};nodes.forEach(n=>delta[n.id]=0);
+while(S.length){const w=S.pop();P[w].forEach(v=>{delta[v]+=(sigma[v]/sigma[w])*(1+delta[w])});if(String(w)!==String(s.id))bc[w]+=delta[w]}});
+return bc}
+function sizeByMetric(metric){
+if(!nodes.length)return;lcPushUndo();
+let vals={};
+if(metric==='degree')nodes.forEach(n=>vals[n.id]=getDegree(n.id));
+else if(metric==='betweenness')vals=computeBetweenness();
+else if(metric==='closeness')vals=computeCloseness();
+else{nodes.forEach(n=>n.r=22);render();save();statusMsg('Node sizes reset to uniform');return}
+const mx=Math.max(1e-9,...nodes.map(n=>vals[n.id]||0));
+nodes.forEach(n=>{n.r=14+Math.round(((vals[n.id]||0)/mx)*26)});
+render();save();statusMsg('Node sizes mapped to '+metric+' centrality — larger = more central')}
+function detectCommunities(){
+if(!nodes.length)return;lcPushUndo();
+const adj=lcAdjacency(),lbl={};nodes.forEach(n=>lbl[n.id]=String(n.id));
+let changed=true,iter=0;
+while(changed&&iter<30){changed=false;iter++;
+const order=[...nodes].sort(()=>Math.random()-0.5);
+order.forEach(n=>{const counts={};(adj[n.id]||[]).forEach(nb=>{const l=lbl[nb];counts[l]=(counts[l]||0)+1});
+let best=lbl[n.id],bestC=-1;Object.entries(counts).forEach(([l,c])=>{if(c>bestC){bestC=c;best=l}});
+if(bestC>0&&best!==lbl[n.id]){lbl[n.id]=best;changed=true}})}
+const commColors=['#2C5F7C','#7C3F2C','#2C7C4B','#6B4E9E','#B0762B','#7C2C5A','#4B5E23','#23545E','#8A2E2E','#3F2C7C'];
+const uniq=[...new Set(nodes.map(n=>lbl[n.id]))];
+nodes.forEach(n=>{n.color=commColors[uniq.indexOf(lbl[n.id])%commColors.length]});
+render();save();statusMsg(uniq.length+' communities detected (label propagation) — nodes recolored. Ctrl+Z to revert')}
+
+// ═══════════════════════════════════════
+// GROUPS
+// ═══════════════════════════════════════
+function createGroupFromSelected(){lcPushUndo();
+  if(multiSelected.size<2){document.getElementById('statusText').textContent='Select 2+ nodes first (use Lasso or Shift+click)';return}
+  const name=prompt('Group name:','Group '+(groups.length+1));
+  if(!name)return;
+  groups.push({id:uid(),name,nodeIds:[...multiSelected],color:currentColor});
+  render();
+}
+
+function renderGroups(highlightNodes){
+  let html='';
+  groups.forEach(g=>{
+    const pts=g.nodeIds.map(id=>findNode(id)).filter(n=>n);
+    if(pts.length<2)return;
+    // Convex hull
+    const hull=d3.polygonHull(pts.map(n=>[n.x,n.y]));
+    if(!hull)return;
+    const expanded=hull.map(([x,y])=>{
+      const cx=d3.mean(hull,p=>p[0]),cy=d3.mean(hull,p=>p[1]);
+      const dx=x-cx,dy=y-cy,dist=Math.sqrt(dx*dx+dy*dy);
+      return[x+dx/dist*30,y+dy/dist*30];
+    });
+    html+=`<polygon class="group-hull" points="${expanded.map(p=>p.join(',')).join(' ')}" fill="${g.color}" stroke="${g.color}"/>`;
+    const cx=d3.mean(expanded,p=>p[0]),cy=d3.min(expanded,p=>p[1])-10;
+    html+=`<text x="${cx}" y="${cy}" text-anchor="middle" font-size="10" fill="${g.color}" font-weight="600" font-family="Inter,sans-serif">${esc(g.name)}</text>`;
+  });
+  groupsG.innerHTML=html;
+}
+
+// ═══════════════════════════════════════
+// FILTERS
+// ═══════════════════════════════════════
+function applyDegreeFilter(val){degreeMin=val;document.getElementById('degreeVal').textContent=val;render()}
+function searchNodes(q){
+  if(!q){render();return}
+  const lower=q.toLowerCase();
+  const match=nodes.find(n=>n.label.toLowerCase().includes(lower)||(n.desc||'').toLowerCase().includes(lower)||Object.entries(n.attrs||{}).some(([k,v])=>String(k).toLowerCase().includes(lower)||String(v).toLowerCase().includes(lower)));
+  if(match){selectedNodeId=match.id;render();showNodeProps(match);
+    document.getElementById('statusText').textContent=`Found: ${match.label}`}
+}
+
+function toggleTimeline(){document.getElementById('timelineBar').classList.toggle('visible')}
+function applyTimelineFilter(){
+  tlFrom=document.getElementById('tlFrom').value;
+  tlTo=document.getElementById('tlTo').value;
+  render();
+}
+function clearTimelineFilter(){stopTimeline();tlFrom='';tlTo='';document.getElementById('tlFrom').value='';document.getElementById('tlTo').value='';render()}
+
+// ── TEMPORAL PLAYBACK ──
+let tlTimer=null;
+function playTimeline(){
+  if(tlTimer){stopTimeline();return}
+  const dates=[...new Set([...edges.map(e=>e.date),...nodes.map(n=>n.date)].filter(Boolean))].sort();
+  if(dates.length<2){statusMsg('Playback needs at least two dated nodes/edges (set Date in properties)');return}
+  document.getElementById('timelineBar').classList.add('visible');
+  document.getElementById('tlPlayBtn').innerHTML='&#9632; Stop';
+  let i=0;tlFrom='';document.getElementById('tlFrom').value='';
+  const step=()=>{
+    tlTo=dates[i];document.getElementById('tlTo').value=tlTo;
+    statusMsg('Timeline: '+tlTo+'  ('+(i+1)+' of '+dates.length+')');
+    render();
+    i++;
+    if(i>=dates.length)stopTimeline(true);
+  };
+  step();
+  tlTimer=setInterval(step,850);
+}
+function stopTimeline(done){
+  if(tlTimer){clearInterval(tlTimer);tlTimer=null}
+  const b=document.getElementById('tlPlayBtn');if(b)b.innerHTML='&#9654; Play';
+  if(done)statusMsg('Playback complete — press Clear to show everything again');
+}
+
+// ── ENTITY RESOLUTION: merge nodes sharing a name ──
+function mergeDuplicateNodes(interactive){
+  const byLabel={};
+  nodes.forEach(n=>{const k=(n.label||'').trim().toLowerCase();if(!k)return;(byLabel[k]=byLabel[k]||[]).push(n)});
+  const groups=Object.values(byLabel).filter(g=>g.length>1);
+  if(!groups.length){if(interactive)statusMsg('No duplicate names found');return 0}
+  const total=groups.reduce((s,g)=>s+g.length-1,0);
+  if(interactive&&!confirm(total+' node(s) share a name with another node ('+groups.length+' name(s)). Merge duplicates into one node each?'))return 0;
+  lcPushUndo();
+  groups.forEach(g=>{const keep=g[0];
+    g.slice(1).forEach(dup=>{
+      edges.forEach(e=>{if(String(e.from)===String(dup.id))e.from=keep.id;if(String(e.to)===String(dup.id))e.to=keep.id});
+      keep.attrs=Object.assign({},dup.attrs||{},keep.attrs||{});
+      if(!keep.desc&&dup.desc)keep.desc=dup.desc;
+      nodes=nodes.filter(x=>x!==dup);
+    });
+  });
+  // drop exact duplicate edges produced by the merge
+  const seen=new Set();
+  edges=edges.filter(e=>{const k=e.from+'>'+e.to+'>'+(e.label||'');if(String(e.from)===String(e.to)&&!e.label)return false;if(seen.has(k))return false;seen.add(k);return true});
+  selectedNodeId=null;multiSelected.clear();hideProps();render();save();
+  statusMsg('Merged '+total+' duplicate node(s)');
+  return total;
+}
+
+// ═══════════════════════════════════════
+// LEGEND
+// ═══════════════════════════════════════
+function toggleLegend(){
+  const panel=document.getElementById('legendPanel');
+  panel.classList.toggle('visible');
+  if(panel.classList.contains('visible'))renderLegend();
+}
+function renderLegend(){
+  const usedTypes=new Set(nodes.map(n=>n.entityType));
+  const usedColors=new Set(nodes.map(n=>n.color));
+  let html='<h4>Entity Types</h4>';
+  ENTITY_TYPES.filter(t=>usedTypes.has(t.id)).forEach(t=>{
+    html+=`<div class="legend-item"><span class="legend-icon">${t.icon}</span>${t.label}</div>`;
+  });
+  html+='<h4 style="margin-top:8px">Confidence</h4>';
+  html+='<div class="legend-item"><span class="legend-dot" style="background:var(--success)"></span>Confirmed</div>';
+  html+='<div class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>Suspected</div>';
+  html+='<div class="legend-item"><span class="legend-dot" style="background:var(--text-light)"></span>Unverified</div>';
+  html+='<h4 style="margin-top:8px">Edge Styles</h4>';
+  html+='<div class="legend-item"><svg width="30" height="8"><line x1="0" y1="4" x2="30" y2="4" stroke="#888" stroke-width="2"/></svg>Confirmed</div>';
+  html+='<div class="legend-item"><svg width="30" height="8"><line x1="0" y1="4" x2="30" y2="4" stroke="#888" stroke-width="2" stroke-dasharray="6,3"/></svg>Suspected</div>';
+  html+='<div class="legend-item"><svg width="30" height="8"><line x1="0" y1="4" x2="30" y2="4" stroke="#888" stroke-width="2" stroke-dasharray="2,3"/></svg>Unverified</div>';
+  document.getElementById('legendPanel').innerHTML=html;
+}
+
+// ═══════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════
+function render(highlightNodes,highlightEdges){
+  const hNodes=highlightNodes||null;
+  const hEdges=highlightEdges||null;
+
+  // Filter by degree + timeline (dated nodes outside the range are hidden; undated always show)
+  const visibleNodes=new Set(nodes.filter(n=>{
+    if(getDegree(n.id)<degreeMin)return false;
+    if((tlFrom||tlTo)&&n.date){
+      if(tlFrom&&n.date<tlFrom)return false;
+      if(tlTo&&n.date>tlTo)return false;
+    }
+    return true;
+  }).map(n=>n.id));
+
+  // Filter edges by timeline
+  let visibleEdges=edges;
+  if(tlFrom||tlTo){
+    visibleEdges=edges.filter(e=>{
+      if(!e.date)return true;
+      if(tlFrom&&e.date<tlFrom)return false;
+      if(tlTo&&e.date>tlTo)return false;
+      return true;
+    });
+  }
+
+  // Edges
+  let edgeHtml='';
+  const pairCount={},pairSeen={};
+  edges.forEach(e=>{const k=e.from<e.to?e.from+'|'+e.to:e.to+'|'+e.from;pairCount[k]=(pairCount[k]||0)+1});
+  visibleEdges.forEach(e=>{
+    const from=findNode(e.from),to=findNode(e.to);
+    if(!from||!to||!visibleNodes.has(e.from)||!visibleNodes.has(e.to))return;
+    const hl=hEdges?.has(e.id);
+    const dimmed=hNodes&&!hNodes.has(e.from)&&!hNodes.has(e.to);
+    const w=Math.max(1.5,(e.weight||1)*0.8+1);
+    const dash=e.style==='dashed'?'stroke-dasharray="8,4"':e.style==='dotted'?'stroke-dasharray="2,4"':'';
+    const sel=e.id===selectedEdgeId;
+    const dir=e.dir||'forward';
+    const mk=hl?'arr-hl':'arr';
+    const mEnd=(dir==='forward'||dir==='both')?`marker-end="url(#${mk})"`:'';
+    const mStart=(dir==='reverse'||dir==='both')?`marker-start="url(#${mk})"`:'';
+    const common=`class="edge-line ${dimmed?'dimmed':''} ${hl?'path-highlight':''}" stroke="${sel?'var(--primary)':hl?'#FFD700':'#B0B8C0'}" stroke-width="${sel?w+1.5:w}" ${dash} ${mEnd} ${mStart} onclick="onEdgeClick('${e.id}',event)" oncontextmenu="onEdgeRightClick('${e.id}',event)"`;
+    if(e.from===e.to){
+      const r0=(from.r||22);
+      edgeHtml+=`<path d="M ${from.x-8} ${from.y-r0+2} a 16 16 0 1 1 16 0" ${common}/>`;
+      if(e.label)edgeHtml+=`<text class="edge-label" x="${from.x}" y="${from.y-r0-36}">${esc(e.label)}</text>`;
+      return;
+    }
+    const k=e.from<e.to?e.from+'|'+e.to:e.to+'|'+e.from;
+    const nn=pairCount[k],idx=(pairSeen[k]=(pairSeen[k]||0)+1)-1;
+    const sign=e.from<e.to?1:-1;
+    const off=nn>1?((idx-(nn-1)/2)*30)*sign:0;
+    const dx=to.x-from.x,dy=to.y-from.y,len=Math.sqrt(dx*dx+dy*dy)||1;
+    const cx=(from.x+to.x)/2+(-dy/len)*off,cy=(from.y+to.y)/2+(dx/len)*off;
+    const rF=(from.r||22)+2,rT=(to.r||22)+2;
+    const l0=Math.sqrt((cx-from.x)**2+(cy-from.y)**2)||1,l1=Math.sqrt((cx-to.x)**2+(cy-to.y)**2)||1;
+    const sx=from.x+(cx-from.x)/l0*rF,sy=from.y+(cy-from.y)/l0*rF;
+    const ex=to.x+(cx-to.x)/l1*rT,ey=to.y+(cy-to.y)/l1*rT;
+    edgeHtml+=`<path d="M ${sx} ${sy} ${off?`Q ${cx} ${cy} `:''}${ex} ${ey}" ${common}/>`;
+    if(e.label){
+      const mx=0.25*sx+0.5*cx+0.25*ex,my=0.25*sy+0.5*cy+0.25*ey;
+      edgeHtml+=`<text class="edge-label" x="${mx}" y="${my-8}">${esc(e.label)}</text>`;
+    }
+  });
+  edgesG.innerHTML=edgeHtml;
+
+  // Groups
+  renderGroups(hNodes);
+
+  // Nodes
+  let nodeHtml='';
+  nodes.forEach(n=>{
+    if(!visibleNodes.has(n.id))return;
+    const sel=n.id===selectedNodeId||multiSelected.has(n.id);
+    const conn=n.id===connectFrom;
+    const dimmed=hNodes&&!hNodes.has(n.id);
+    const hl=hNodes?.has(n.id)&&!dimmed;
+    const r=n.r||22;
+    const confColor=n.confidence==='suspected'?'var(--warning)':n.confidence==='unverified'?'var(--text-light)':'';
+    const strokeC=conn?'var(--primary)':sel?'#333':confColor||darken(n.color);
+    const strokeW=sel||conn?3:confColor?2.5:1.5;
+    const strokeDash=n.confidence==='suspected'?'stroke-dasharray="4,3"':n.confidence==='unverified'?'stroke-dasharray="2,3"':'';
+
+    const clickHandler=pathFindFrom?`window._pathClickHandler('${n.id}',event)`:`onNodeClick('${n.id}',event)`;
+
+    nodeHtml+=`<g class="node-group ${sel?'selected':''} ${dimmed?'dimmed':''} ${hl?'path-highlight':''}"
+      onclick="${clickHandler}" onmousedown="onNodeMouseDown('${n.id}',event)" oncontextmenu="onNodeRightClick('${n.id}',event)">`;
+
+    // Shape (circle / square / diamond, optional photo fill)
+    const shp=n.shape||'circle';
+    if(n.photo){
+      nodeHtml+=`<clipPath id="clip-${n.id}"><circle cx="${n.x}" cy="${n.y}" r="${r}"/></clipPath>`;
+      nodeHtml+=`<circle class="node-shape" cx="${n.x}" cy="${n.y}" r="${r}" fill="${n.color}"/>`;
+      nodeHtml+=`<image href="${n.photo}" x="${n.x-r}" y="${n.y-r}" width="${r*2}" height="${r*2}" clip-path="url(#clip-${n.id})" preserveAspectRatio="xMidYMid slice"/>`;
+      nodeHtml+=`<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="none" stroke="${strokeC}" stroke-width="${strokeW}" ${strokeDash}/>`;
+    }else if(shp==='square'){
+      nodeHtml+=`<rect class="node-shape" x="${n.x-r*0.88}" y="${n.y-r*0.88}" width="${r*1.76}" height="${r*1.76}" rx="3" fill="${n.color}" stroke="${strokeC}" stroke-width="${strokeW}" ${strokeDash} opacity=".9"/>`;
+    }else if(shp==='diamond'){
+      nodeHtml+=`<rect class="node-shape" x="${n.x-r*0.76}" y="${n.y-r*0.76}" width="${r*1.52}" height="${r*1.52}" rx="3" transform="rotate(45 ${n.x} ${n.y})" fill="${n.color}" stroke="${strokeC}" stroke-width="${strokeW}" ${strokeDash} opacity=".9"/>`;
+    }else{
+      nodeHtml+=`<circle class="node-shape" cx="${n.x}" cy="${n.y}" r="${r}" fill="${n.color}" stroke="${strokeC}" stroke-width="${strokeW}" ${strokeDash} opacity=".9"/>`;
+    }
+
+    // Icon (hidden when a photo fills the node)
+    const icon=getIcon(n.entityType);
+    if(!n.photo&&n.entityType!=='generic'){
+      nodeHtml+=`<text class="node-icon" x="${n.x}" y="${n.y}" dy="1">${icon}</text>`;
+    }
+
+    // Degree badge
+    const deg=getDegree(n.id);
+    if(deg>0){
+      nodeHtml+=`<circle cx="${n.x+r*0.7}" cy="${n.y-r*0.7}" r="7" fill="#555" stroke="white" stroke-width="1.5"/>`;
+      nodeHtml+=`<text class="node-badge" x="${n.x+r*0.7}" y="${n.y-r*0.7}" dy="3">${deg}</text>`;
+    }
+
+    // Label
+    nodeHtml+=`<text class="node-label" x="${n.x}" y="${n.y+r+14}" fill="${LC_DARK?'#D8D4C8':'#333'}">${esc(n.label)}</text>`;
+    if(n.group)nodeHtml+=`<text class="node-sublabel" x="${n.x}" y="${n.y+r+24}">${esc(n.group)}</text>`;
+
+    nodeHtml+=`</g>`;
+  });
+  nodesG.innerHTML=nodeHtml;
+
+  // Node list
+  document.getElementById('nodeCount').textContent=nodes.length;
+  document.getElementById('edgeCount').textContent=edges.length;
+  const listHtml=nodes.filter(n=>visibleNodes.has(n.id)).map(n=>
+    `<div class="node-list-item ${n.id===selectedNodeId||multiSelected.has(n.id)?'selected':''}" onclick="selectNodeFromList('${n.id}')">
+      <span class="icon">${getIcon(n.entityType)}</span><span class="name">${esc(n.label)}</span><span class="degree">${getDegree(n.id)}</span>
+    </div>`).join('');
+  document.getElementById('nodeList').innerHTML=listHtml;
+
+  updateMinimap();
+  save();
+}
+
+function darken(hex){if(!hex||hex.charAt(0)!=='#')return'#444';const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgb(${Math.max(0,r-40)},${Math.max(0,g-40)},${Math.max(0,b-40)})`}
+
+// ═══════════════════════════════════════
+// ANNOTATIONS
+// ═══════════════════════════════════════
+function renderAnnotations(){
+  const layer=document.getElementById('annotationsLayer');
+  layer.innerHTML=annotations.map(a=>
+    `<div class="annotation" style="left:${a.x}px;top:${a.y}px" onmousedown="startDragAnnotation('${a.id}',event)">
+      <textarea oninput="updateAnnotation('${a.id}',this.value)">${esc(a.text)}</textarea>
+      <button class="ann-delete" onclick="deleteAnnotation('${a.id}')">&times;</button>
+    </div>`).join('');
+}
+function updateAnnotation(id,text){const a=annotations.find(x=>String(x.id)===String(id));if(a){lcPushUndoThrottled();a.text=text}save()}
+function deleteAnnotation(id){lcPushUndo();annotations=annotations.filter(x=>String(x.id)!==String(id));renderAnnotations();save()}
+function startDragAnnotation(id,e){lcPushUndo();
+  if(e.target.tagName==='TEXTAREA')return;
+  const ann=annotations.find(x=>String(x.id)===String(id));if(!ann)return;
+  const startX=e.clientX-ann.x,startY=e.clientY-ann.y;
+  const move=ev=>{ann.x=ev.clientX-startX;ann.y=ev.clientY-startY;renderAnnotations()};
+  const up=()=>{document.removeEventListener('mousemove',move);document.removeEventListener('mouseup',up);save()};
+  document.addEventListener('mousemove',move);document.addEventListener('mouseup',up);
+}
+
+// ═══════════════════════════════════════
+// LAYOUTS
+// ═══════════════════════════════════════
+function doLayout(type){lcPushUndo();
+  if(nodes.length===0)return;
+  const rect=svg.getBoundingClientRect();
+  const cx=rect.width/2,cy=rect.height/2;
+
+  if(type==='force'){
+    const k=Math.sqrt((rect.width*rect.height)/nodes.length)*.4;
+    nodes.forEach((n,i)=>{const a=(2*Math.PI*i)/nodes.length;n.x=cx+Math.cos(a)*k;n.y=cy+Math.sin(a)*k});
+    for(let iter=0;iter<80;iter++){
+      const t=1-iter/80;
+      for(let i=0;i<nodes.length;i++){for(let j=i+1;j<nodes.length;j++){
+        let dx=nodes[j].x-nodes[i].x,dy=nodes[j].y-nodes[i].y;
+        let d=Math.sqrt(dx*dx+dy*dy)||1;let f=(k*k)/d*t*.5;
+        nodes[j].x+=dx/d*f;nodes[j].y+=dy/d*f;nodes[i].x-=dx/d*f;nodes[i].y-=dy/d*f;
+      }}
+      edges.forEach(e=>{const a=findNode(e.from),b=findNode(e.to);if(!a||!b)return;
+        let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||1;
+        let f=(d-k*.8)/d*t*.3;a.x+=dx*f;a.y+=dy*f;b.x-=dx*f;b.y-=dy*f;});
+      nodes.forEach(n=>{n.x+=(cx-n.x)*.01*t;n.y+=(cy-n.y)*.01*t});
+    }
+  }else if(type==='circular'){
+    const r=Math.min(rect.width,rect.height)*.35;
+    nodes.forEach((n,i)=>{const a=(2*Math.PI*i)/nodes.length-Math.PI/2;n.x=cx+Math.cos(a)*r;n.y=cy+Math.sin(a)*r});
+  }else if(type==='grid'){
+    const cols=Math.ceil(Math.sqrt(nodes.length));
+    const spacing=Math.min(rect.width/(cols+1),80);
+    const ox=(rect.width-spacing*(cols-1))/2;
+    nodes.forEach((n,i)=>{n.x=ox+(i%cols)*spacing;n.y=100+Math.floor(i/cols)*spacing});
+  }else if(type==='hierarchy'){
+    // Simple top-down by degree
+    const sorted=[...nodes].sort((a,b)=>getDegree(b.id)-getDegree(a.id));
+    const layers=[];let placed=new Set();
+    sorted.forEach(n=>{
+      if(placed.has(n.id))return;
+      let layer=0;
+      edges.forEach(e=>{if(e.to===n.id){const parent=findNode(e.from);if(parent&&placed.has(parent.id)){const pl=layers.findIndex(l=>l.includes(parent.id));if(pl>=0)layer=Math.max(layer,pl+1)}}});
+      if(!layers[layer])layers[layer]=[];
+      layers[layer].push(n.id);placed.add(n.id);
+    });
+    layers.forEach((layer,li)=>{
+      const y=80+li*100;
+      layer.forEach((nid,ni)=>{
+        const n=findNode(nid);if(!n)return;
+        n.x=(rect.width/(layer.length+1))*(ni+1);n.y=y;
+      });
+    });
+  }
+
+  nodes.forEach(n=>{n.x=Math.max(40,Math.min(rect.width-40,n.x));n.y=Math.max(40,Math.min(rect.height-40,n.y))});
+  render();
+}
+
+// ═══════════════════════════════════════
+// PERSISTENCE
+// ═══════════════════════════════════════
+function save(){localStorage.setItem(LC_KEY,JSON.stringify({nodes,edges,groups,annotations,nextId,views,meta:{name:chartName}}))}
+function load(){try{const d=JSON.parse(localStorage.getItem(LC_KEY));if(d){nodes=d.nodes||[];edges=d.edges||[];groups=d.groups||[];annotations=d.annotations||[];nextId=d.nextId||1;views=d.views||[];chartName=(d.meta&&d.meta.name)||''}}catch(e){}}
+
+// ═══════════════════════════════════════
+// IMPORT / EXPORT
+// ═══════════════════════════════════════
+function exportJSON(){const blob=new Blob([JSON.stringify({ws:LC_WS||undefined,nodes,edges,groups,annotations},null,2)],{type:'application/json'});const a=document.createElement('a');a.download='link_chart.json';a.href=URL.createObjectURL(blob);a.click()}
+function importJSON(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=x=>{try{const d=JSON.parse(x.target.result);lcPushUndo();if(d.nodes)nodes=d.nodes;setTimeout(()=>mergeDuplicateNodes(true),150);if(d.edges)edges=d.edges;if(d.groups)groups=d.groups||[];if(d.annotations)annotations=d.annotations||[];nextId=Math.max(...nodes.map(n=>n.id),...edges.map(e=>e.id||0),0)+1;render();renderAnnotations()}catch(err){alert('Invalid JSON')}};r.readAsText(f);e.target.value=''}
+
+function exportPNG(){
+  const svgEl=svg;const rect=svgEl.getBoundingClientRect();
+  const data=new XMLSerializer().serializeToString(svgEl);
+  const canvas=document.createElement('canvas');canvas.width=rect.width*2;canvas.height=rect.height*2;
+  const ctx=canvas.getContext('2d');ctx.scale(2,2);
+  const img=new Image();img.onload=()=>{ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0);
+    const a=document.createElement('a');a.download='link_chart.png';a.href=canvas.toDataURL('image/png');a.click()};
+  img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(data)));
+}
+
+// ── SVG EXPORT (vector) ──
+function exportSVG(){
+  const clone=svg.cloneNode(true);
+  const rect=svg.getBoundingClientRect();
+  clone.setAttribute('width',rect.width);clone.setAttribute('height',rect.height);
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
+  bg.setAttribute('width','100%');bg.setAttribute('height','100%');bg.setAttribute('fill','#FFFFFF');
+  clone.insertBefore(bg,clone.firstChild);
+  let str=new XMLSerializer().serializeToString(clone);
+  const pc=getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()||'#2C5F7C';
+  str=str.replace(/var\(--primary\)/g,pc).replace(/var\(--warning\)/g,'#E67E22').replace(/var\(--text-light\)/g,'#999').replace(/var\(--rule\)/g,'#E0E3E8');
+  const blob=new Blob([str],{type:'image/svg+xml'});
+  const a=document.createElement('a');a.download=(chartName||'link_chart')+'.svg';a.href=URL.createObjectURL(blob);a.click();
+}
+
+// ── GRAPHML EXPORT (Gephi / yEd interop) ──
+function exportGraphML(){
+const xe=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+let out='<?xml version="1.0" encoding="UTF-8"?>\n<graphml xmlns="http://graphml.graphdrawing.org/xmlns">\n';
+out+='<key id="d_label" for="node" attr.name="label" attr.type="string"/>\n<key id="d_type" for="node" attr.name="entityType" attr.type="string"/>\n<key id="d_desc" for="node" attr.name="description" attr.type="string"/>\n<key id="d_date" for="node" attr.name="date" attr.type="string"/>\n<key id="d_conf" for="node" attr.name="confidence" attr.type="string"/>\n<key id="d_attrs" for="node" attr.name="attributes" attr.type="string"/>\n<key id="e_label" for="edge" attr.name="label" attr.type="string"/>\n<key id="e_weight" for="edge" attr.name="weight" attr.type="double"/>\n<key id="e_date" for="edge" attr.name="date" attr.type="string"/>\n';
+out+='<graph id="G" edgedefault="directed">\n';
+nodes.forEach(n=>{out+='<node id="'+xe(n.id)+'"><data key="d_label">'+xe(n.label)+'</data><data key="d_type">'+xe(n.entityType||'generic')+'</data>'+(n.desc?'<data key="d_desc">'+xe(n.desc)+'</data>':'')+(n.date?'<data key="d_date">'+xe(n.date)+'</data>':'')+'<data key="d_conf">'+xe(n.confidence||'confirmed')+'</data>'+(n.attrs&&Object.keys(n.attrs).length?'<data key="d_attrs">'+xe(JSON.stringify(n.attrs))+'</data>':'')+'</node>\n'});
+edges.forEach(e=>{out+='<edge source="'+xe(e.from)+'" target="'+xe(e.to)+'">'+(e.label?'<data key="e_label">'+xe(e.label)+'</data>':'')+'<data key="e_weight">'+(e.weight||1)+'</data>'+(e.date?'<data key="e_date">'+xe(e.date)+'</data>':'')+'</edge>\n'});
+out+='</graph>\n</graphml>';
+const blob=new Blob([out],{type:'application/xml'});
+const a=document.createElement('a');a.download=(chartName||'link_chart')+'.graphml';a.href=URL.createObjectURL(blob);a.click();
+}
+
+// ── WORKSPACE MANAGER (My Charts) ──
+function chartWorkspaces(){
+const out=[];
+for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);
+if(k==='linkchart2'||(k&&k.startsWith('linkchart2_ws_'))){
+try{const d=JSON.parse(localStorage.getItem(k))||{};
+out.push({key:k,ws:k==='linkchart2'?null:k.slice('linkchart2_ws_'.length),name:(d.meta&&d.meta.name)||'',n:(d.nodes||[]).length,e:(d.edges||[]).length})}catch(e){}}}
+out.sort((a,b)=>(a.key===LC_KEY?-1:b.key===LC_KEY?1:0));
+return out}
+function openChartsModal(){renderChartsList();document.getElementById('chartsModal').style.display='flex'}
+function closeChartsModal(){document.getElementById('chartsModal').style.display='none'}
+function renderChartsList(){
+const list=chartWorkspaces();
+document.getElementById('chartsList').innerHTML=list.map(c=>{
+const cur=c.key===LC_KEY;
+const label=c.name||(c.ws?'Journal chart ('+String(c.ws).slice(0,10)+')':'Standalone chart');
+return '<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--rule);border-radius:4px;margin-bottom:5px'+(cur?';outline:2px solid var(--primary)':'')+'">'
++'<div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(label)+(cur?' &middot; current':'')+'</div>'
++'<div style="font-size:9px;color:var(--text-light)">'+c.n+' nodes &middot; '+c.e+' edges</div></div>'
++(cur?'':'<button style="font-size:9px;cursor:pointer" onclick="openWorkspace(\''+(c.ws||'')+'\')">Open</button>')
++'<button style="font-size:9px;cursor:pointer" onclick="renameWorkspace(\''+c.key+'\')">Rename</button>'
++(cur?'':'<button style="font-size:9px;cursor:pointer;color:var(--danger)" onclick="deleteWorkspace(\''+c.key+'\')">Delete</button>')
++'</div>'}).join('')||'<div style="font-size:10px;color:var(--text-light)">No saved charts yet.</div>'}
+function openWorkspace(ws){location.search=ws?('?ws='+encodeURIComponent(ws)):''}
+function newChartWorkspace(){location.search='?ws=chart_'+Date.now().toString(36)}
+function renameWorkspace(key){const name=prompt('Chart name:');if(!name)return;
+try{const d=JSON.parse(localStorage.getItem(key))||{};d.meta=d.meta||{};d.meta.name=name;localStorage.setItem(key,JSON.stringify(d));if(key===LC_KEY)chartName=name;renderChartsList()}catch(e){}}
+function deleteWorkspace(key){if(key===LC_KEY)return;if(!confirm('Delete this chart permanently?'))return;localStorage.removeItem(key);renderChartsList()}
+
+function openCSVImport(){document.getElementById('csvModal').style.display='flex'}
+function closeCSVModal(){document.getElementById('csvModal').style.display='none'}
+function doCSVImport(){lcPushUndo();
+  const txt=document.getElementById('csvEdgeInput').value.trim();if(!txt)return;
+  const lines=txt.split('\n');
+  const nodeMap={};
+  nodes.forEach(n=>{const k=(n.label||'').trim();if(k&&!(k in nodeMap))nodeMap[k]=n.id});
+  lines.forEach(line=>{
+    const parts=line.split(',').map(s=>s.trim());
+    if(parts.length<2)return;
+    const[fromName,toName,label,weight,style,date]=parts;
+    // Find or create nodes
+    if(!nodeMap[fromName]){const n={id:uid(),label:fromName,desc:'',group:'',entityType:'generic',x:100+Math.random()*500,y:100+Math.random()*400,r:22,color:currentColor,confidence:'confirmed',date:''};nodes.push(n);nodeMap[fromName]=n.id}
+    if(!nodeMap[toName]){const n={id:uid(),label:toName,desc:'',group:'',entityType:'generic',x:100+Math.random()*500,y:100+Math.random()*400,r:22,color:currentColor,confidence:'confirmed',date:''};nodes.push(n);nodeMap[toName]=n.id}
+    edges.push({id:uid(),from:nodeMap[fromName],to:nodeMap[toName],label:label||'',weight:parseInt(weight)||1,style:style||'solid',date:date||''});
+  });
+  render();closeCSVModal();document.getElementById('csvEdgeInput').value='';
+  doLayout('force');
+}
+
+function clearAll(){if(!confirm('Clear everything?'))return;lcPushUndo();nodes=[];edges=[];groups=[];annotations=[];selectedNodeId=null;selectedEdgeId=null;multiSelected.clear();nextId=1;hideProps();render();renderAnnotations()}
+
+// ═══════════════════════════════════════
+// KEYBOARD
+// ═══════════════════════════════════════
+document.addEventListener('keydown',function(e){
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'&&!e.shiftKey){e.preventDefault();lcUndoAction();return}
+  if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.key==='z'&&e.shiftKey))){e.preventDefault();lcRedoAction();return}
+  if((e.ctrlKey||e.metaKey)&&e.key==='d'){e.preventDefault();duplicateSelection();return}
+  if((e.ctrlKey||e.metaKey)&&e.key==='c'){copySelection();return}
+  if((e.ctrlKey||e.metaKey)&&e.key==='v'){pasteClipboard();return}
+  if(e.key==='Delete'||e.key==='Backspace')deleteSelected();
+  if(e.key==='a')setMode('add');
+  if(e.key==='s')setMode('select');
+  if(e.key==='c')setMode('connect');
+  if(e.key==='l')setMode('lasso');
+  if(e.key==='t')setMode('annotate');
+  if(e.key===' '&&!e.repeat){spaceHeld=true;svg.style.cursor='grab';e.preventDefault()}
+  if(e.key==='Escape'){selectedNodeId=null;selectedEdgeId=null;multiSelected.clear();pathFindFrom=null;hideProps();hideCtxMenu();setMode('select');render()}
+});
+
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
+load();render();renderAnnotations();refreshViewSel();
+if(!nodes.length)document.getElementById('statusText').textContent='Press A to add nodes, or import data via CSV/JSON';
+
+// ── ZOOM & PAN ──
+const zoomGroup=document.getElementById('zoomGroup');
+
+let spaceHeld=false;
+const zoomBehavior=d3.zoom()
+  .scaleExtent([0.1,8])
+  .filter(function(event){
+    // Pinch / Ctrl+wheel zooms; plain scroll pans (handled separately below)
+    if(event.type==='wheel')return event.ctrlKey||event.metaKey;
+    if(spaceHeld&&(event.type==='mousedown'))return true;
+    if(mode==='add'||mode==='connect'||mode==='lasso'||mode==='annotate')return false;
+    if(event.type==='mousedown'){
+      if(event.button===1||event.ctrlKey||event.metaKey)return true;
+      // Left-drag on empty canvas = grab-hand pan
+      if(event.button===0&&!event.target.closest('.node-group')&&!event.target.closest('.edge-line'))return true;
+    }
+    return false;
+  })
+  .on('zoom',function(event){
+    currentTransform=event.transform;
+    zoomGroup.setAttribute('transform',`translate(${event.transform.x},${event.transform.y}) scale(${event.transform.k})`);
+    updateMinimap();
+  });
+
+d3.select(svg).call(zoomBehavior);
+d3.select(svg).on('dblclick.zoom',null);
+// Two-finger scroll (or mouse wheel) pans; Shift+wheel pans horizontally
+svg.addEventListener('wheel',function(e){
+  if(e.ctrlKey||e.metaKey)return; // zoom is handled by d3
+  e.preventDefault();
+  let dx=e.deltaX,dy=e.deltaY;
+  if(e.shiftKey&&!dx){dx=dy;dy=0}
+  d3.select(svg).call(zoomBehavior.translateBy,-dx/currentTransform.k,-dy/currentTransform.k);
+},{passive:false});
+// Space = hand tool
+document.addEventListener('keyup',function(e){if(e.key===' '){spaceHeld=false;svg.style.cursor=''}});
+window.addEventListener('blur',function(){spaceHeld=false;svg.style.cursor=''});
+
+// Override click coordinates to account for zoom transform
+const origGetCoords=null;
+function svgCoords(e){
+  const rect=svg.getBoundingClientRect();
+  const px=e.clientX-rect.left;
+  const py=e.clientY-rect.top;
+  return{x:(px-currentTransform.x)/currentTransform.k,y:(py-currentTransform.y)/currentTransform.k};
+}
+
+// Patch node placement to use transformed coords
+const origSvgClick=svg.onclick;
+svg.removeEventListener('click',origSvgClick);
+svg.addEventListener('click',function(e){
+  if(e.target.closest('.node-group')||e.target.closest('.edge-line'))return;
+  hideCtxMenu();
+  if(mode==='add'){
+    lcPushUndo();
+    const{x,y}=svgCoords(e);
+    const n={id:uid(),label:'Node '+nodes.length,desc:'',group:'',entityType:currentType,x,y,r:22,color:currentColor,confidence:'confirmed',date:''};
+    nodes.push(n);selectedNodeId=n.id;selectedEdgeId=null;render();showNodeProps(n);
+    setTimeout(()=>{const inp=document.getElementById('propLabel');if(inp){inp.focus();inp.select()}},50);
+  }else if(mode==='annotate'){
+    lcPushUndo();
+    const{x,y}=svgCoords(e);
+    annotations.push({id:uid(),x:e.clientX-svg.getBoundingClientRect().left,y:e.clientY-svg.getBoundingClientRect().top,text:''});
+    renderAnnotations();save();
+  }else if(mode==='select'){
+    selectedNodeId=null;selectedEdgeId=null;multiSelected.clear();hideProps();render();
+  }
+},true);
+
+// Patch mousedown for drag to use transformed coords
+svg.addEventListener('mousedown',function(e){
+  if(mode==='lasso'){
+    const{x,y}=svgCoords(e);
+    lassoStart={x,y,rawX:e.clientX,rawY:e.clientY};
+    lassoActive=true;
+    const lr=document.getElementById('lassoRect');
+    lr.setAttribute('x',x);lr.setAttribute('y',y);lr.setAttribute('width',0);lr.setAttribute('height',0);
+    lr.style.display='block';
+  }
+},true);
+
+// Patch mousemove for drag and lasso
+svg.addEventListener('mousemove',function(e){
+  if(dragNode){
+    if(!dragSnapDone){lcPushUndo();dragSnapDone=true}
+    const n=findNode(dragNode);if(!n)return;
+    const{x,y}=svgCoords(e);
+    const dx=x-dragOff.x,dy=y-dragOff.y;
+    if(multiSelected.has(dragNode)){
+      const ox=dx-n.x,oy=dy-n.y;
+      multiSelected.forEach(id=>{const nd=findNode(id);if(nd){nd.x+=ox;nd.y+=oy}});
+    }else{n.x=dx;n.y=dy}
+    render();
+  }
+  if(lassoActive&&lassoStart){
+    const{x,y}=svgCoords(e);
+    const lr=document.getElementById('lassoRect');
+    lr.setAttribute('x',Math.min(lassoStart.x,x));lr.setAttribute('y',Math.min(lassoStart.y,y));
+    lr.setAttribute('width',Math.abs(x-lassoStart.x));lr.setAttribute('height',Math.abs(y-lassoStart.y));
+  }
+},true);
+
+svg.addEventListener('mouseup',function(e){
+  dragNode=null;
+  if(lassoActive&&lassoStart){
+    lassoActive=false;
+    document.getElementById('lassoRect').style.display='none';
+    const{x,y}=svgCoords(e);
+    const lx=Math.min(lassoStart.x,x),ly=Math.min(lassoStart.y,y);
+    const lw=Math.abs(x-lassoStart.x),lh=Math.abs(y-lassoStart.y);
+    multiSelected.clear();
+    nodes.forEach(n=>{if(n.x>=lx&&n.x<=lx+lw&&n.y>=ly&&n.y<=ly+lh)multiSelected.add(n.id)});
+    lassoStart=null;render();
+    document.getElementById('statusText').textContent=multiSelected.size+' nodes selected';
+  }
+},true);
+
+// Patch mousedown for node drag to use transformed coords
+window.onNodeMouseDown=function(id,e){
+  if(mode!=='select'&&mode!=='lasso')return;
+  const n=findNode(id);if(!n)return;
+  e.preventDefault();e.stopPropagation();
+  dragNode=n.id;dragSnapDone=false;
+  const{x,y}=svgCoords(e);
+  dragOff.x=x-n.x;dragOff.y=y-n.y;
+};
+
+// ── SAVED VIEWS ──
+function refreshViewSel(){const s=document.getElementById('viewSel');if(!s)return;
+s.innerHTML='<option value="">&mdash; saved views &mdash;</option>'+views.map((v,i)=>`<option value="${i}">${esc(v.name)}</option>`).join('')}
+function saveView(){const name=prompt('View name:','View '+(views.length+1));if(!name)return;
+views.push({name,t:{x:currentTransform.x,y:currentTransform.y,k:currentTransform.k},tlFrom,tlTo,degreeMin});
+save();refreshViewSel();statusMsg('View saved: '+name)}
+function gotoView(i){if(i==='')return;const v=views[+i];if(!v)return;
+tlFrom=v.tlFrom||'';tlTo=v.tlTo||'';degreeMin=v.degreeMin||0;
+document.getElementById('tlFrom').value=tlFrom;document.getElementById('tlTo').value=tlTo;
+document.getElementById('degreeFilter').value=degreeMin;document.getElementById('degreeVal').textContent=degreeMin;
+const t=d3.zoomIdentity.translate(v.t.x,v.t.y).scale(v.t.k);
+d3.select(svg).transition().duration(600).call(zoomBehavior.transform,t);
+render();statusMsg('View: '+v.name)}
+function deleteView(){const s=document.getElementById('viewSel');const i=s.value;if(i==='')return;
+views.splice(+i,1);save();refreshViewSel();statusMsg('View deleted')}
+
+// ── MINIMAP ──
+function updateMinimap(){const el=document.getElementById('minimapSvg');if(!el)return;
+if(!nodes.length){el.innerHTML='';return}
+const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y);
+const minX=Math.min(...xs)-60,maxX=Math.max(...xs)+60,minY=Math.min(...ys)-60,maxY=Math.max(...ys)+60;
+const W=160,H=110;const sc=Math.min(W/(maxX-minX),H/(maxY-minY));
+const ox=(W-(maxX-minX)*sc)/2,oy=(H-(maxY-minY)*sc)/2;
+window._mmMap={minX,minY,sc,ox,oy};
+let h='';
+edges.forEach(e=>{const f=findNode(e.from),t=findNode(e.to);if(!f||!t)return;
+h+=`<line x1="${(f.x-minX)*sc+ox}" y1="${(f.y-minY)*sc+oy}" x2="${(t.x-minX)*sc+ox}" y2="${(t.y-minY)*sc+oy}" stroke="#CCC7B9" stroke-width=".6"/>`});
+nodes.forEach(n=>{h+=`<circle cx="${(n.x-minX)*sc+ox}" cy="${(n.y-minY)*sc+oy}" r="2" fill="${n.color||'#888'}"/>`});
+const rect=svg.getBoundingClientRect();
+const vx0=(0-currentTransform.x)/currentTransform.k,vy0=(0-currentTransform.y)/currentTransform.k;
+const vx1=(rect.width-currentTransform.x)/currentTransform.k,vy1=(rect.height-currentTransform.y)/currentTransform.k;
+h+=`<rect x="${(vx0-minX)*sc+ox}" y="${(vy0-minY)*sc+oy}" width="${Math.max(2,(vx1-vx0)*sc)}" height="${Math.max(2,(vy1-vy0)*sc)}" fill="none" stroke="var(--primary)" stroke-width="1"/>`;
+el.innerHTML=h}
+function minimapJump(e){const m=window._mmMap;if(!m)return;
+const box=document.getElementById('minimap').getBoundingClientRect();
+const gx=(e.clientX-box.left-m.ox)/m.sc+m.minX,gy=(e.clientY-box.top-m.oy)/m.sc+m.minY;
+const rect=svg.getBoundingClientRect();const k=currentTransform.k;
+const t=d3.zoomIdentity.translate(rect.width/2-gx*k,rect.height/2-gy*k).scale(k);
+d3.select(svg).call(zoomBehavior.transform,t)}
+
+function fitToScreen(){
+  if(!nodes.length)return;
+  const rect=svg.getBoundingClientRect();
+  const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y);
+  const minX=Math.min(...xs)-60,maxX=Math.max(...xs)+60;
+  const minY=Math.min(...ys)-60,maxY=Math.max(...ys)+60;
+  const graphW=maxX-minX,graphH=maxY-minY;
+  const scale=Math.min(rect.width/graphW,rect.height/graphH,2)*.9;
+  const tx=(rect.width-graphW*scale)/2-minX*scale;
+  const ty=(rect.height-graphH*scale)/2-minY*scale;
+  const t=d3.zoomIdentity.translate(tx,ty).scale(scale);
+  d3.select(svg).transition().duration(500).call(zoomBehavior.transform,t);
+}
+
+function resetZoom(){
+  d3.select(svg).transition().duration(300).call(zoomBehavior.transform,d3.zoomIdentity);
+}
+</script>
+<div id="chartsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2000;align-items:center;justify-content:center" onclick="if(event.target===this)closeChartsModal()">
+  <div style="background:var(--white);border-radius:8px;padding:18px;width:440px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <h3 style="font-size:13px;margin-bottom:10px">My Charts</h3>
+    <div id="chartsList"></div>
+    <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
+      <button onclick="newChartWorkspace()" style="font-size:10px;padding:4px 10px;border:1px solid var(--primary);background:var(--primary);color:white;border-radius:4px;cursor:pointer">+ New Chart</button>
+      <button onclick="closeChartsModal()" style="font-size:10px;padding:4px 10px;border:1px solid var(--rule);background:var(--white);border-radius:4px;cursor:pointer">Close</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
